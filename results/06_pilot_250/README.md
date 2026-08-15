@@ -19,24 +19,24 @@
 
 | 파일 | 크기 |
 |---|---|
-| `model_pilot_summary.md` | 6 KB |
-| `model_pilot_sample.csv` | 10 KB |
+| `arousal_target_percall.parquet` | 21 KB |
+| `arousal_target_summary.md` | 5 KB |
+| `lang_pilot_percall.parquet` | 8 KB |
+| `lang_pilot_pred_en_full.parquet` | 6 KB |
+| `lang_pilot_pred_en_rsn.parquet` | 6 KB |
+| `lang_pilot_pred_ko.parquet` | 6 KB |
+| `lang_pilot_summary.md` | 6 KB |
+| `modality_ab_percall.parquet` | 6 KB |
+| `modality_ab_summary.md` | 4 KB |
 | `model_pilot_percall.parquet` | 10 KB |
 | `model_pilot_pred_54low.parquet` | 6 KB |
 | `model_pilot_pred_54med.parquet` | 6 KB |
 | `model_pilot_pred_56terra_med.parquet` | 6 KB |
+| `model_pilot_pred_A_54low.parquet` | 6 KB |
 | `model_pilot_pred_lunalow.parquet` | 6 KB |
 | `model_pilot_pred_lunamed.parquet` | 6 KB |
-| `model_pilot_pred_A_54low.parquet` | 6 KB |
-| `modality_ab_summary.md` | 4 KB |
-| `modality_ab_percall.parquet` | 6 KB |
-| `lang_pilot_summary.md` | 6 KB |
-| `lang_pilot_percall.parquet` | 8 KB |
-| `lang_pilot_pred_ko.parquet` | 6 KB |
-| `lang_pilot_pred_en_rsn.parquet` | 6 KB |
-| `lang_pilot_pred_en_full.parquet` | 6 KB |
-| `arousal_target_summary.md` | 5 KB |
-| `arousal_target_percall.parquet` | 21 KB |
+| `model_pilot_sample.csv` | 10 KB |
+| `model_pilot_summary.md` | 6 KB |
 
 ## 결론
 

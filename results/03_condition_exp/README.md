@@ -18,27 +18,27 @@
 
 | 파일 | 크기 |
 |---|---|
+| `human_pilot_answers.md` | 7 KB |
+| `human_pilot_meta.csv` | 1 KB |
+| `shift_mismatch_full.parquet` | 160 KB |
+| `stage2_agent_vs_acoustic_effect.csv` | 3 KB |
+| `stage2_bd_before_after.csv` | 8 KB |
+| `stage2_bd_renorm_metrics.csv` | 13 KB |
+| `stage2_bd_v3_gpt_predictions.parquet` | 1,038 KB |
+| `stage2_bd_v3_metrics.csv` | 13 KB |
+| `stage2_bd_v3_vs_base.csv` | 22 KB |
+| `stage2_before_after_comparison.csv` | 2 KB |
 | `stage2_condition_summary.csv` | 1 KB |
-| `stage2d_gpt_predictions.parquet` | 2,354 KB |
-| `stage2_per_label_acoustic_effect.csv` | 4 KB |
-| `stage2_mismatch_subset_accuracy.csv` | 0 KB |
+| `stage2_mcnemar_full.csv` | 2 KB |
+| `stage2_mcnemar_results.csv` | 1 KB |
 | `stage2_mismatch_acoustic_delta.csv` | 12 KB |
 | `stage2_mismatch_acoustic_delta_after.csv` | 10 KB |
 | `stage2_mismatch_confusion_metrics.csv` | 16 KB |
 | `stage2_mismatch_confusion_metrics_after.csv` | 13 KB |
-| `stage2_mcnemar_results.csv` | 1 KB |
-| `stage2_mcnemar_full.csv` | 2 KB |
-| `stage2_before_after_comparison.csv` | 2 KB |
-| `stage2_bd_before_after.csv` | 8 KB |
-| `stage2_bd_renorm_metrics.csv` | 13 KB |
-| `stage2_bd_v3_metrics.csv` | 13 KB |
-| `stage2_bd_v3_vs_base.csv` | 22 KB |
-| `stage2_agent_vs_acoustic_effect.csv` | 3 KB |
+| `stage2_mismatch_subset_accuracy.csv` | 0 KB |
+| `stage2_per_label_acoustic_effect.csv` | 4 KB |
+| `stage2d_gpt_predictions.parquet` | 2,354 KB |
 | `stage2m_gpt_predictions_BD.parquet` | 1,041 KB |
-| `stage2_bd_v3_gpt_predictions.parquet` | 1,038 KB |
-| `shift_mismatch_full.parquet` | 160 KB |
-| `human_pilot_answers.md` | 7 KB |
-| `human_pilot_meta.csv` | 1 KB |
 
 ## 결론
 

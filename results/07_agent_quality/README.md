@@ -16,11 +16,11 @@
 | 파일 | 크기 |
 |---|---|
 | `agent_judge_gate_summary.md` | 3 KB |
-| `agent_strat_summary.md` | 4 KB |
-| `agent_judge_scores.parquet` | 6 KB |
-| `agent_judge_percall.parquet` | 7 KB |
-| `agent_strat_percall.parquet` | 8 KB |
 | `agent_judge_human_eval_slots.csv` | 1 KB |
+| `agent_judge_percall.parquet` | 7 KB |
+| `agent_judge_scores.parquet` | 6 KB |
+| `agent_strat_percall.parquet` | 8 KB |
+| `agent_strat_summary.md` | 4 KB |
 
 ## 결론
 

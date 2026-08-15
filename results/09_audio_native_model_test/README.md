@@ -6,8 +6,8 @@
 
 | 스크립트 | 역할 |
 |---|---|
-| `scripts/../results/09_audio_native_model_test/qwen2_5_omni_test.ipynb` | Qwen2.5-Omni-7B 스팟체크 (Colab A100, transformers) |
-| `scripts/../results/09_audio_native_model_test/qwen3_omni_test_vllm.ipynb` | Qwen3-Omni-30B-A3B-Thinking-AWQ-4bit 250콜 전량 (vLLM) |
+| `../results/09_audio_native_model_test/qwen2_5_omni_test.ipynb` | Qwen2.5-Omni-7B 스팟체크 (Colab A100, transformers) |
+| `../results/09_audio_native_model_test/qwen3_omni_test_vllm.ipynb` | Qwen3-Omni-30B-A3B-Thinking-AWQ-4bit 250콜 전량 (vLLM) |
 
 ## 산출물
 

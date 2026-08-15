@@ -14,16 +14,16 @@
 
 | 파일 | 크기 |
 |---|---|
-| `prompt_pilot.xlsx` | 17 KB |
 | `prompt_explore.xlsx` | 13 KB |
-| `prompt_explore_v3.xlsx` | 13 KB |
-| `prompt_pilot_sample_a.csv` | 8 KB |
-| `prompt_pilot_sample_b.csv` | 9 KB |
-| `prompt_pilot_gpt_predictions.parquet` | 13 KB |
-| `prompt_explore_gpt_predictions.parquet` | 10 KB |
 | `prompt_explore_base_reused.parquet` | 3 KB |
+| `prompt_explore_gpt_predictions.parquet` | 10 KB |
+| `prompt_explore_v3.xlsx` | 13 KB |
 | `prompt_explore_v3_gpt_predictions.parquet` | 10 KB |
 | `prompt_explore_v3_reused.parquet` | 5 KB |
+| `prompt_pilot.xlsx` | 17 KB |
+| `prompt_pilot_gpt_predictions.parquet` | 13 KB |
+| `prompt_pilot_sample_a.csv` | 8 KB |
+| `prompt_pilot_sample_b.csv` | 9 KB |
 
 ## 결론
 

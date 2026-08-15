@@ -12,8 +12,8 @@
 
 | 파일 | 크기 |
 |---|---|
-| `audio_seg_summary.md` | 3 KB |
 | `audio_seg_manifest.parquet` | 29 KB |
+| `audio_seg_summary.md` | 3 KB |
 
 ## 결론
 

@@ -12,6 +12,8 @@
 ```
 docs/
   PIPELINE.md        ← 단계 지도 + 스크립트 126개 역인덱스 (여기서 시작)
+  WORKFLOW.md        Colab ↔ 로컬 병행 작업 규약, 새 단계 추가 방법
+  DATA_INVENTORY.md  outputs/ 전체 목록 — 무엇이 로컬에 있고 왜 제외됐는지
   PROJECT_STATE.md   프로젝트 상태 스냅샷(2026-07-19): 환경·시드·비용·이슈 이력
 scripts/             실행 스크립트 126개 (평면 구조)
 results/             단계별 산출물 — 각 폴더 README에 질문·스크립트·결론
@@ -53,6 +55,8 @@ AIHub D04는 **재배포 금지** 라이선스다. 따라서 이 저장소에는
 - `results/09_audio_native_model_test/qwen3_omni_test_vllm.ipynb` — 모델 reasoning 출력에 인용된 5발화
 
 원문이 필요하면 [AIHub](https://aihub.or.kr)에서 직접 내려받은 뒤 `scripts/build_index.py`부터 재현하면 된다. 외부 경로는 `docs/PROJECT_STATE.md`의 "외부 데이터 경로" 참고.
+
+저장소에 없는 파일이라도 **무엇이 있는지는** [`docs/DATA_INVENTORY.md`](docs/DATA_INVENTORY.md)에서 확인할 수 있다 — `outputs/` 전체 2,336개 항목의 파일명·크기·행×열·컬럼·제외 사유가 들어 있다.
 
 ---
 

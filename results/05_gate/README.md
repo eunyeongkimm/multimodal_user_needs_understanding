@@ -17,27 +17,27 @@
 
 | 파일 | 크기 |
 |---|---|
+| `gate_infopoor_layer_comparison.csv` | 0 KB |
+| `gate_prompt_gpt_predictions.parquet` | 56 KB |
+| `gate_signal_inference.parquet` | 339 KB |
+| `gate_signal_train10k.parquet` | 172 KB |
+| `infopoor_tagged.csv` | 670 KB |
 | `probing_feature_importance.csv` | 3 KB |
 | `probing_gate_threshold_sweep.csv` | 1 KB |
 | `probing_layer_acoustic_delta.csv` | 0 KB |
-| `gate_infopoor_layer_comparison.csv` | 0 KB |
-| `infopoor_tagged.csv` | 670 KB |
-| `gate_signal_train10k.parquet` | 172 KB |
-| `gate_signal_inference.parquet` | 339 KB |
-| `gate_prompt_gpt_predictions.parquet` | 56 KB |
-| `train10k_call_ids.csv` | 117 KB |
-| `train10k_v4_target_call_ids.csv` | 141 KB |
-| `train10k_v5_target_call_ids.csv` | 65 KB |
-| `train10k_gpt_labels.parquet` | 140 KB |
-| `train10k_gpt_labels_v4.parquet` | 83 KB |
-| `train10k_gpt_labels_v5.parquet` | 79 KB |
-| `train_10k_final_labeled.parquet` | 73 KB |
-| `train_10k_labeled.parquet` | 1,524 KB |
-| `train_10k_pool5_labeled.parquet` | 1,544 KB |
-| `train10k_acoustic_features.parquet` | 1,586 KB |
 | `rescue_harm_analysis.csv` | 1 KB |
 | `rescue_harm_raw.parquet` | 30 KB |
 | `shift_trigger_validation.csv` | 0 KB |
+| `train10k_acoustic_features.parquet` | 1,586 KB |
+| `train10k_call_ids.csv` | 117 KB |
+| `train10k_gpt_labels.parquet` | 140 KB |
+| `train10k_gpt_labels_v4.parquet` | 83 KB |
+| `train10k_gpt_labels_v5.parquet` | 79 KB |
+| `train10k_v4_target_call_ids.csv` | 141 KB |
+| `train10k_v5_target_call_ids.csv` | 65 KB |
+| `train_10k_final_labeled.parquet` | 73 KB |
+| `train_10k_labeled.parquet` | 1,524 KB |
+| `train_10k_pool5_labeled.parquet` | 1,544 KB |
 | `trigger_comparison.csv` | 2 KB |
 
 ## 결론

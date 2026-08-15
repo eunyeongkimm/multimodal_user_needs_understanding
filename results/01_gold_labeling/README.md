@@ -19,20 +19,20 @@
 
 | 파일 | 크기 |
 |---|---|
-| `pilot200_gpt_labels.csv` | 8 KB |
-| `pilot80_gpt_labels_v2.csv` | 3 KB |
-| `human_eval_v3_labels.csv` | 1 KB |
 | `gold_actual_batch1.parquet` | 142 KB |
+| `gold_actual_batch1_final.parquet` | 143 KB |
 | `gold_actual_batch1_v4.parquet` | 85 KB |
 | `gold_actual_batch1_v5.parquet` | 80 KB |
-| `gold_actual_batch1_final.parquet` | 143 KB |
+| `human_eval_v3_labels.csv` | 1 KB |
+| `pilot200_gpt_labels.csv` | 8 KB |
+| `pilot80_gpt_labels_v2.csv` | 3 KB |
+| `refund_cancel_boundary.xlsx` | 6 KB |
 | `v3_target_call_ids.csv` | 283 KB |
+| `v4_self_consistency_pass2.csv` | 6 KB |
 | `v4_target_call_ids.csv` | 283 KB |
 | `v5_target_call_ids.csv` | 130 KB |
-| `v4_self_consistency_pass2.csv` | 6 KB |
 | `v_unified_sample_call_ids.csv` | 50 KB |
 | `v_unified_sample_labels.parquet` | 36 KB |
-| `refund_cancel_boundary.xlsx` | 6 KB |
 
 ## 결론
 

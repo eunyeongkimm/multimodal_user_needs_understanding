@@ -356,9 +356,10 @@ STAGES = [
     dict(
         dir="09_audio_native_model_test",
         title="audio-native 모델 테스트 (Qwen-Omni)",
-        # managed=False: 산출물이 outputs/가 아니라 이 폴더에 직접 들어 있다(Colab 노트북).
-        # repo_organize 재실행 시 폴더를 비우지 않고 README만 갱신한다.
-        managed=False,
+        # wipe=False: Colab에서 직접 커밋되는 노트북이 이 폴더에 산다. outputs/에서 재생성할 수
+        # 없으므로 재실행 시 폴더를 비우지 않는다.
+        # Colab 결과 parquet을 저장소에 넣으려면 outputs/에 놓고 아래 files에 이름만 추가하면 된다.
+        wipe=False,
         question="텍스트 전사를 거치지 않고 오디오를 직접 먹는 모델은, 08에서 만든 같은 250콜에서 GPT 텍스트 파이프라인만큼 할 수 있는가?",
         scripts=[
             ("../results/09_audio_native_model_test/qwen2_5_omni_test.ipynb",
@@ -446,26 +447,27 @@ def _col_risky(s: pd.Series) -> bool:
     return bool(((s.str.len() > LONG_TEXT_CHARS) & s.str.contains(KO)).any())
 
 
-def write_stage_readme(st, copied):
+def write_stage_readme(st):
+    """폴더에 실제로 있는 파일을 그대로 나열한다.
+
+    outputs/에서 복사해 온 것이든 Colab에서 직접 커밋된 노트북이든 구분 없이
+    잡히므로, 수록 목록이 실물과 어긋날 일이 없다.
+    """
+    d = RESULTS / st["dir"]
     lines = [f"# {st['dir'][:2]}. {st['title']}", "", f"**질문**: {st['question']}", "",
              "## 스크립트", "", "| 스크립트 | 역할 |", "|---|---|"]
     for name, role in st["scripts"]:
-        lines.append(f"| `scripts/{name}` | {role} |")
+        path = name if name.startswith("..") else f"scripts/{name}"
+        lines.append(f"| `{path}` | {role} |")
     lines += ["", "## 산출물", ""]
-    if not st.get("managed", True):
-        here = sorted(p for p in (RESULTS / st["dir"]).iterdir()
-                      if p.is_file() and p.name != "README.md")
+    here = sorted(p for p in d.iterdir() if p.is_file() and p.name != "README.md")
+    if here:
         lines += ["| 파일 | 크기 |", "|---|---|"]
         lines += [f"| `{p.name}` | {p.stat().st_size/1024:,.0f} KB |" for p in here]
-    elif copied:
-        lines += ["| 파일 | 크기 |", "|---|---|"]
-        for f in copied:
-            kb = (RESULTS / st["dir"] / f).stat().st_size / 1024
-            lines.append(f"| `{f}` | {kb:,.0f} KB |")
     else:
         lines.append("(이 단계의 산출물은 원문 포함으로 공개 repo에서 제외됨)")
     lines += ["", "## 결론", "", st["conclusion"], ""]
-    (RESULTS / st["dir"] / "README.md").write_text("\n".join(lines), encoding="utf-8")
+    (d / "README.md").write_text("\n".join(lines), encoding="utf-8")
 
 
 # 스크립트 파일명 -> 단계. 위에서부터 먼저 맞는 규칙을 쓴다(긴 접두어 우선).
@@ -584,6 +586,83 @@ def write_pipeline_doc():
         print(f"    [미분류] {s}")
 
 
+def write_data_inventory():
+    """docs/DATA_INVENTORY.md — outputs/ 전체 목록과 수록/제외 사유.
+
+    저장소에는 원문이 없지만, **무엇이 로컬에 있는지**는 어디서든 확인할 수 있어야 한다.
+    파일명·크기·행수·컬럼과 제외 사유를 커밋해 두면 다른 기기나 Colab에서도
+    "그 데이터가 있긴 한지, 컬럼이 뭔지"를 로컬 없이 알 수 있다.
+    """
+    included = {f for st in STAGES for f in st["files"]}
+    rows = []
+    for p in sorted(OUT.iterdir()):
+        if p.name.startswith("."):  # .DS_Store 등
+            continue
+        if p.is_dir():
+            n = sum(1 for _ in p.rglob("*") if _.is_file())
+            size = sum(_.stat().st_size for _ in p.rglob("*") if _.is_file())
+            rows.append(dict(name=p.name + "/", mb=size / 1e6, shape=f"{n:,}개 파일",
+                             cols="", state="제외", why="원본 오디오(AIHub 재배포 금지)"))
+            continue
+        mb = p.stat().st_size / 1e6
+        shape, cols = "", ""
+        if p.suffix in (".parquet", ".csv") and mb < 25:
+            try:
+                d = (pd.read_parquet(p) if p.suffix == ".parquet"
+                     else pd.read_csv(p, nrows=5000, dtype=str))
+                shape = f"{len(d):,} × {len(d.columns)}"
+                cols = ", ".join(str(c) for c in list(d.columns)[:8])
+                if len(d.columns) > 8:
+                    cols += f", … (+{len(d.columns)-8})"
+            except Exception:
+                shape = "read err"
+        if p.name in included:
+            state, why = "**수록**", ""
+            if p.name in STRIP_COLS:
+                why = f"`{'`, `'.join(STRIP_COLS[p.name])}` 컬럼 제거 후 수록"
+        elif p.suffix == ".jsonl":
+            state, why = "제외", "batch 요청 — 프롬프트에 전사 원문 포함"
+        elif mb > 25:
+            state, why = "제외", "대용량"
+        else:
+            state, why = "제외", "전사 원문 포함 또는 중간 산출물"
+        rows.append(dict(name=p.name, mb=mb, shape=shape, cols=cols, state=state, why=why))
+
+    n_inc = sum(1 for r in rows if r["state"] == "**수록**")
+    total = sum(r["mb"] for r in rows)
+    jsonl = [r for r in rows if r["name"].endswith(".jsonl")]
+
+    L = ["# 로컬 데이터 인벤토리", "",
+         "`outputs/`는 git에 올리지 않는다(2.5GB + AIHub 재배포 금지). 하지만 **무엇이 "
+         "있는지**는 저장소만 봐도 알 수 있어야 하므로, 목록·크기·행수·컬럼을 여기 남긴다.", "",
+         f"- 전체 {len(rows):,}개 항목 / 약 {total/1000:.1f} GB",
+         f"- 저장소 수록 {n_inc}개 (`results/`)",
+         f"- batch 요청 JSONL {len(jsonl):,}개는 표에서 접어 둠(아래 요약만)", "",
+         "재생성: `python3 scripts/repo_organize.py` (이 문서도 함께 갱신됨)", "",
+         "---", "", "## 파일 목록", "",
+         "| 파일 | MB | 행 × 열 | 상태 | 비고 |", "|---|---|---|---|---|"]
+    for r in rows:
+        if r["name"].endswith(".jsonl"):
+            continue
+        L.append(f"| `{r['name']}` | {r['mb']:,.1f} | {r['shape']} | {r['state']} | {r['why']} |")
+    if jsonl:
+        L += ["", f"### batch 요청 JSONL ({len(jsonl):,}개, "
+              f"{sum(r['mb'] for r in jsonl)/1000:.1f} GB)", "",
+              "전부 제외. 프롬프트 안에 전사 원문이 그대로 들어 있다. "
+              "각 단계의 `*_chunk_plan.py`를 다시 돌리면 재생성된다.", ""]
+
+    L += ["---", "", "## 컬럼 사전 (수록 파일)", "",
+          "| 파일 | 컬럼 |", "|---|---|"]
+    for r in rows:
+        if r["state"] == "**수록**" and r["cols"]:
+            L.append(f"| `{r['name']}` | {r['cols']} |")
+    L.append("")
+
+    (DOCS / "DATA_INVENTORY.md").write_text("\n".join(L), encoding="utf-8")
+    print(f"  docs/DATA_INVENTORY.md — {len(rows):,}개 항목 "
+          f"(수록 {n_inc} / JSONL {len(jsonl):,} 접음)")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="복사 없이 점검만")
@@ -614,11 +693,11 @@ def main():
         print("\ncheck 모드 종료 (복사 안 함)")
         return
 
-    # managed 단계 폴더만 비운다. managed=False(예: 09 노트북)는 outputs/에서 재생성할 수
-    # 없으므로 건드리면 안 된다.
+    # wipe=True 단계만 비운다. wipe=False(예: 09 Colab 노트북)는 outputs/에서 재생성할 수
+    # 없는 파일이 들어 있으므로 폴더를 지우면 안 되고, files 목록만 덮어쓴다.
     for st in STAGES:
         d = RESULTS / st["dir"]
-        if st.get("managed", True) and d.exists():
+        if st.get("wipe", True) and d.exists():
             shutil.rmtree(d)
     DOCS.mkdir(exist_ok=True)
 
@@ -628,11 +707,6 @@ def main():
         d = RESULTS / st["dir"]
         d.mkdir(parents=True, exist_ok=True)
         copied = []
-        if not st.get("managed", True):
-            write_stage_readme(st, copied)
-            n_here = sum(1 for p in d.iterdir() if p.is_file() and p.name != "README.md")
-            print(f"  {st['dir']:28s} {n_here:2d}개 (기존 유지, README만 갱신)")
-            continue
         for f in st["files"]:
             src = OUT / f
             if not src.exists():
@@ -643,8 +717,11 @@ def main():
             else:
                 shutil.copy2(src, d / f)
             copied.append(f)
-        write_stage_readme(st, copied)
-        print(f"  {st['dir']:28s} {len(copied):2d}개")
+        write_stage_readme(st)
+        n_here = sum(1 for p in d.iterdir() if p.is_file() and p.name != "README.md")
+        kept = n_here - len(copied)
+        note = f" (+ 기존 유지 {kept}개)" if kept else ""
+        print(f"  {st['dir']:28s} 복사 {len(copied):2d}개{note}")
 
     print("\n=== results/ 재검증 (복사된 전체 다시 스캔) ===")
     leaks = []
@@ -665,6 +742,7 @@ def main():
 
     print("\n=== 문서 생성 ===")
     write_pipeline_doc()
+    write_data_inventory()
     print("REPO_ORGANIZE_COMPLETE")
 
 

@@ -16,13 +16,13 @@
 
 | 파일 | 크기 |
 |---|---|
-| `data_cleaning_report.md` | 4 KB |
-| `d04_dialog_index_column_dictionary.md` | 4 KB |
-| `batch1_call_ids.csv` | 234 KB |
-| `batch2_call_ids.csv` | 634 KB |
-| `batch1_no_valid_text_call_ids.csv` | 2 KB |
-| `inbound_outbound_gpt.csv` | 2 KB |
 | `acoustic_features_sample50.csv` | 12 KB |
+| `batch1_call_ids.csv` | 234 KB |
+| `batch1_no_valid_text_call_ids.csv` | 2 KB |
+| `batch2_call_ids.csv` | 634 KB |
+| `d04_dialog_index_column_dictionary.md` | 4 KB |
+| `data_cleaning_report.md` | 4 KB |
+| `inbound_outbound_gpt.csv` | 2 KB |
 
 ## 결론
 
