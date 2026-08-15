@@ -1,0 +1,287 @@
+"""train10k(v2 프롬프트, 기존 gold_actual과 동일 기준) Batch 제출/확인.
+STEP1 패치: batch.error_file_id를 반드시 확인하고, 거기 기록된 개별 요청 레벨
+실패를 동기 API로 즉시 재시도한다(output_file_id만 보면 이런 실패가 조용히
+누락될 수 있음 - batch1에서 실제로 1건 발생했던 버그).
+
+--test 플래그: 10건 스모크 테스트용 별도 상태/출력 경로 사용(STEP1 패치 검증).
+"""
+
+import argparse
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+import pandas as pd
+from dotenv import load_dotenv
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from relabel_v2_and_kappa import normalize_gpt_label
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+MODEL = "gpt-4.1-mini"
+MAX_RETRIES = 2
+TOKEN_CEILING = 1_600_000
+
+
+def paths_for(test: bool):
+    tag = "test10" if test else "full"
+    return {
+        "plan": BASE_DIR / "outputs" / f"train10k_{'test10_' if test else ''}requests_plan.json",
+        "index": BASE_DIR / "outputs" / f"train10k_{'test10_' if test else ''}request_index.parquet",
+        "state": BASE_DIR / "outputs" / f"train10k_{tag}_chunks_state.json",
+        "partial": BASE_DIR / "outputs" / f"train10k_{tag}_partial",
+        "final": BASE_DIR / "outputs" / (f"train10k_test10_gpt_labels.parquet" if test else "train10k_gpt_labels.parquet"),
+        "project_tag": f"train10k_{tag}",
+    }
+
+
+def load_state(P):
+    if P["state"].exists():
+        with open(P["state"], "r", encoding="utf-8") as f:
+            state = json.load(f)
+        for c in state["chunks"]:
+            c.setdefault("retries", 0)
+            c.setdefault("last_error", None)
+        return state
+    with open(P["plan"], "r", encoding="utf-8") as f:
+        plan = json.load(f)
+    idx = pd.read_parquet(P["index"]).set_index("custom_id")["tokens"]
+    chunks = []
+    for i, custom_ids in enumerate(plan):
+        n_tokens = int(idx.loc[custom_ids].sum())
+        chunks.append({
+            "index": i, "n_requests": len(custom_ids), "n_tokens": n_tokens,
+            "status": "pending", "batch_id": None, "submitted_at": None,
+            "completed_at": None, "retries": 0, "last_error": None,
+        })
+    return {"chunks": chunks}
+
+
+def save_state(P, state):
+    with open(P["state"], "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def reconcile_with_server(client, P, state):
+    if not any(c["status"] == "pending" for c in state["chunks"]):
+        return False
+    chunks_by_index = {c["index"]: c for c in state["chunks"]}
+    latest_by_index = {}
+    for b in client.batches.list(limit=100):
+        meta = b.metadata or {}
+        if meta.get("project") != P["project_tag"] or "chunk_index" not in meta:
+            continue
+        idx = int(meta["chunk_index"])
+        prev = latest_by_index.get(idx)
+        if prev is None or b.created_at > prev.created_at:
+            latest_by_index[idx] = b
+    changed = False
+    for idx, batch in latest_by_index.items():
+        chunk = chunks_by_index.get(idx)
+        if chunk is None or chunk["status"] != "pending":
+            continue
+        if batch.status in ("failed", "expired", "cancelled"):
+            continue
+        print(f"청크 {idx}: 서버에 이미 배치 {batch.id}(status={batch.status})가 있어 재사용.")
+        chunk["batch_id"] = batch.id
+        chunk["status"] = "submitted"
+        chunk["submitted_at"] = batch.created_at
+        changed = True
+    return changed
+
+
+def submit_chunk(client, P, chunk_index: int, plan: list, prompts: pd.Series):
+    custom_ids = plan[chunk_index]
+    jsonl_path = BASE_DIR / "outputs" / f"train10k_{P['project_tag']}_chunk{chunk_index}_requests.jsonl"
+    with open(jsonl_path, "w", encoding="utf-8") as f:
+        for cid in custom_ids:
+            body = {"model": MODEL, "messages": [{"role": "user", "content": prompts.loc[cid]}], "temperature": 0}
+            f.write(json.dumps({"custom_id": cid, "method": "POST", "url": "/v1/chat/completions", "body": body},
+                                ensure_ascii=False) + "\n")
+    with open(jsonl_path, "rb") as f:
+        uploaded = client.files.create(file=f, purpose="batch")
+    batch = client.batches.create(
+        input_file_id=uploaded.id, endpoint="/v1/chat/completions", completion_window="24h",
+        metadata={"project": P["project_tag"], "chunk_index": str(chunk_index)},
+    )
+    return batch.id
+
+
+def retry_failed_requests(client, P, chunk_index: int, failed_records: list, max_retries: int = 3) -> pd.DataFrame:
+    """STEP1 패치 핵심: error_file_id에만 기록되고 output_file_id에는 없는 개별 요청
+    레벨 실패를 동기 API로 즉시 재시도한다."""
+    prompts = pd.read_parquet(P["index"]).set_index("custom_id")["prompt"]
+    rows = []
+    for custom_id, err_msg in failed_records:
+        if custom_id not in prompts.index:
+            rows.append({"custom_id": custom_id, "predicted_label": None, "error_note": "프롬프트없음"})
+            continue
+        prompt = prompts.loc[custom_id]
+        label, last_err = None, None
+        for attempt in range(max_retries):
+            try:
+                resp = client.chat.completions.create(
+                    model=MODEL, messages=[{"role": "user", "content": prompt}], temperature=0,
+                )
+                label = normalize_gpt_label(resp.choices[0].message.content)
+                break
+            except Exception as e:
+                last_err = e
+                time.sleep(2 ** attempt)
+        if label is None and last_err is not None:
+            print(f"  경고: {custom_id} 동기 재시도도 실패 (원래 에러: {err_msg}, 재시도 에러: {last_err})")
+        rows.append({"custom_id": custom_id, "predicted_label": label,
+                     "error_note": f"error_file_id기록됨(원인:{err_msg})"})
+    return pd.DataFrame(rows)
+
+
+def download_chunk_result(client, P, chunk_index: int, batch_id: str):
+    batch = client.batches.retrieve(batch_id)
+    content = client.files.content(batch.output_file_id).text
+    rows = []
+    for line in content.strip().split("\n"):
+        rec = json.loads(line)
+        custom_id = rec["custom_id"]
+        body = rec.get("response", {}).get("body", {})
+        try:
+            label = normalize_gpt_label(body["choices"][0]["message"]["content"])
+        except Exception:
+            label = None
+        rows.append({"custom_id": custom_id, "predicted_label": label, "error_note": None})
+    df = pd.DataFrame(rows)
+
+    # STEP1 패치: error_file_id 확인 (output_file_id만 보면 개별 요청 실패가 조용히 누락됨)
+    if batch.error_file_id:
+        error_content = client.files.content(batch.error_file_id).text
+        failed_records = []
+        for line in error_content.strip().split("\n"):
+            if not line.strip():
+                continue
+            err_rec = json.loads(line)
+            err_body = err_rec.get("response", {}).get("body", {})
+            err_msg = err_body.get("error", {}).get("message", str(err_rec.get("error")))
+            failed_records.append((err_rec["custom_id"], err_msg))
+        if failed_records:
+            print(f"[STEP1 패치 작동] 청크 {chunk_index}에서 error_file_id에 기록된 개별 요청 실패 "
+                  f"{len(failed_records)}건 감지: {[c for c, _ in failed_records]}")
+            retry_df = retry_failed_requests(client, P, chunk_index, failed_records)
+            n_recovered = retry_df["predicted_label"].notna().sum()
+            print(f"  -> 동기 API 즉시 재시도로 {n_recovered}/{len(failed_records)}건 복구")
+            df = pd.concat([df, retry_df], ignore_index=True)
+    else:
+        print(f"청크 {chunk_index}: error_file_id 없음 (개별 요청 레벨 실패 0건)")
+
+    P["partial"].mkdir(exist_ok=True)
+    df.to_parquet(P["partial"] / f"chunk_{chunk_index}.parquet", index=False)
+    return df
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--test", action="store_true")
+    args = parser.parse_args()
+    P = paths_for(args.test)
+
+    load_dotenv(BASE_DIR / ".env")
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key or api_key == "REPLACE_ME":
+        print("ERROR: OPENAI_API_KEY가 설정되지 않았습니다.")
+        sys.exit(1)
+    import openai
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key)
+    try:
+        _run(client, P)
+    except (openai.APIConnectionError, openai.APITimeoutError,
+            openai.RateLimitError, openai.InternalServerError) as e:
+        print(f"일시적 API 오류, 다음 폴링에 재시도합니다: {e}")
+
+
+def _run(client, P):
+    state = load_state(P)
+    chunks = state["chunks"]
+
+    if reconcile_with_server(client, P, state):
+        save_state(P, state)
+
+    submitted = [c for c in chunks if c["status"] == "submitted"]
+    changed_any = False
+    for chunk in submitted:
+        batch = client.batches.retrieve(chunk["batch_id"])
+        if batch.status == "completed":
+            download_chunk_result(client, P, chunk["index"], chunk["batch_id"])
+            chunk["status"] = "completed"
+            chunk["completed_at"] = time.time()
+            print(f"청크 {chunk['index']} 완료 및 저장 ({chunk['n_requests']}건).")
+            changed_any = True
+        elif batch.status in ("failed", "expired", "cancelled"):
+            err_msg = str(batch.errors) if batch.errors else batch.status
+            chunk["last_error"] = err_msg
+            if chunk["retries"] < MAX_RETRIES:
+                chunk["retries"] += 1
+                chunk["status"] = "pending"
+                chunk["batch_id"] = None
+                print(f"청크 {chunk['index']} {batch.status} (재시도 {chunk['retries']}/{MAX_RETRIES}). 에러: {err_msg}")
+            else:
+                chunk["status"] = "failed_permanent"
+                print(f"청크 {chunk['index']} 재시도 소진, 건너뜁니다. 에러: {err_msg}")
+            changed_any = True
+
+    if changed_any:
+        save_state(P, state)
+
+    in_flight_tokens = sum(c["n_tokens"] for c in chunks if c["status"] == "submitted")
+    pending = [c for c in chunks if c["status"] == "pending"]
+    if pending:
+        with open(P["plan"], "r", encoding="utf-8") as f:
+            plan = json.load(f)
+        prompts = pd.read_parquet(P["index"]).set_index("custom_id")["prompt"]
+        n_submitted_now = 0
+        for chunk in pending:
+            if in_flight_tokens + chunk["n_tokens"] > TOKEN_CEILING:
+                break
+            try:
+                batch_id = submit_chunk(client, P, chunk["index"], plan, prompts)
+            except Exception as e:
+                print(f"청크 {chunk['index']} 제출 실패: {e}. 다음 폴링에 재시도.")
+                break
+            chunk["batch_id"] = batch_id
+            chunk["status"] = "submitted"
+            chunk["submitted_at"] = time.time()
+            in_flight_tokens += chunk["n_tokens"]
+            n_submitted_now += 1
+        if n_submitted_now:
+            save_state(P, state)
+            print(f"이번 폴링에서 {n_submitted_now}개 청크 신규 제출 (in-flight {in_flight_tokens:,}/{TOKEN_CEILING:,})")
+
+    statuses = [c["status"] for c in chunks]
+    n_completed = statuses.count("completed")
+    n_submitted_s = statuses.count("submitted")
+    n_pending_s = statuses.count("pending")
+    n_failed = statuses.count("failed_permanent")
+    print(f"진행 상황: 완료 {n_completed} / 진행중 {n_submitted_s} / 대기 {n_pending_s} / "
+          f"영구실패 {n_failed} (전체 {len(chunks)})")
+
+    terminal = {"completed", "failed_permanent"}
+    if all(s in terminal for s in statuses):
+        completed_chunks = [c for c in chunks if c["status"] == "completed"]
+        parts = [pd.read_parquet(P["partial"] / f"chunk_{c['index']}.parquet") for c in completed_chunks]
+        preds = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(
+            columns=["custom_id", "predicted_label", "error_note"])
+        req_idx = pd.read_parquet(P["index"])[["custom_id", "call_id"]]
+        merged = req_idx.merge(preds, on="custom_id", how="left")
+        merged = merged.rename(columns={"predicted_label": "gold_actual"})
+        merged.to_parquet(P["final"], index=False)
+        n_null = merged["gold_actual"].isna().sum()
+        print(f"\n저장: {P['final']} ({len(merged)}행)")
+        print(f"라벨 파싱 실패/누락: {n_null}건")
+        if n_failed:
+            print("ALL_CHUNKS_DONE_WITH_FAILURES")
+        else:
+            print("\nALL_CHUNKS_COMPLETE")
+
+
+if __name__ == "__main__":
+    main()

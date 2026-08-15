@@ -1,0 +1,19 @@
+.env
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+.Rhistory
+
+# 로컬 작업 캐시 2.5GB. git에는 results/의 큐레이션 사본만 올린다.
+# (scripts/가 outputs/ 평면 경로를 하드코딩하므로 디렉터리 자체는 유지되어야 함)
+outputs/
+
+# AIHub 재배포 금지 — 원본/추출 오디오
+*.wav
+
+# 세션 로그(전사 인용 가능성)
+conversation-*.txt
+
+# 연구계획서 PDF (실명 포함) — 공개 저장소에 필요 없어 기본 제외. 올리려면 이 줄 삭제.
+1.연구계획서/
