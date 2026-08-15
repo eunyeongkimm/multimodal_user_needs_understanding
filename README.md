@@ -7,31 +7,7 @@
 
 ---
 
-## 핵심 결과
-
-통화 첫 발화의 표면 니즈와 통화 전체의 실제 니즈는 **유효 19,548콜 중 9,658콜(49.4%)에서 어긋난다.**
-
-가장 두드러진 오류 유형은 *실제로는 항의하려고 건 전화인데 환불 문의로 읽히는* 경우다. 250콜 paired 표본에서 이 오류가 무엇에 반응하는지 다섯 개 축으로 확인했다.
-
-| 흔든 축 | 조건 | `gold=불만제기 → 예측=환불요청` 셀 |
-|---|---|---|
-| 모델 버전 | 4.1-mini / 5.4 / luna / terra | 18~20 |
-| reasoning effort | low / medium | 18~20 |
-| 모달리티 | text-only / text+acoustic | 19 / 19 |
-| 추론 언어 | 한국어 / 영어 | 19 / 19 |
-| 입력 언어 | 한국어 / 영어(MT) | 19 / 18 |
-
-전반 성능은 분명히 개선된다(macro-F1 0.476 → 0.538, 불만 F1 0.036 → 0.364). **그런데도 이 셀은 움직이지 않는다.** 텍스트·음성 양쪽 조건에서 동시에 틀리는 18콜이 남고, 그 콜들의 초반 고객 arousal은 오히려 정답을 맞힌 불만 콜보다 높다(0.407 vs 0.104, Mann-Whitney 전 지표 p>0.22). '음성이 밋밋해서 놓친다'는 설명은 지지되지 않는다.
-
-상담사 응대 품질로 설명되는지도 확인했으나, 불만 교란을 분리한 층(gold≠불만, n=200)에서 AUC 0.506으로 판별력이 없어 사전 기준에 따라 해당 워크스트림을 종료했다.
-
-전사를 거치지 않는 audio-native 모델도 같은 250콜로 확인했다. Qwen3-Omni-30B는 accuracy **0.328**로, GPT 텍스트 파이프라인(0.596~0.604)에 크게 못 미쳤고 예측이 불만제기로 쏠렸다(gold 50건 → 예측 101건).
-
-자세한 근거는 [`results/06_pilot_250/`](results/06_pilot_250/), [`results/07_agent_quality/`](results/07_agent_quality/), [`results/09_audio_native_model_test/`](results/09_audio_native_model_test/).
-
----
-
-## 저장소 구조
+## 레포 구조
 
 ```
 docs/
@@ -93,14 +69,5 @@ python3 scripts/repo_organize.py             # results/ + docs/PIPELINE.md 재�
 ```
 
 시드는 전부 42로 고정되어 있다(목록은 `docs/PROJECT_STATE.md`). 패키지 버전은 `requirements.txt`에 `pip freeze`로 고정.
-
----
-
-## 남은 작업
-
-- `results/07_agent_quality/agent_judge_human_eval_slots.csv` 40건 수동 채점 → `agent_judge_gate.py` 재실행 시 quadratic-weighted Kappa 자동 산출
-- 250건 파일럿의 조건 간 McNemar 검정 (per-call parquet 존재, 추가 API 호출 불필요)
-- Batch2(54,123건) 처리 — `J18_S002691` 1건 복구 포함
-- Track B(shrinkage) 정규화 검증
 
 상세 이력과 알려진 이슈는 [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
