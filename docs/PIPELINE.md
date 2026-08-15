@@ -39,6 +39,7 @@
 | [06](../results/06_pilot_250/) 250건 paired 파일럿 — 모델 / effort / 모달리티 / 언어 | 'gold=불만제기인데 환불요청으로 예측'하는 오류를, 모델·추론량·모달리티·추론언어 중 무엇으로든 줄일 수 있는가? | `scripts/model_pilot_sample.py` | [`results/06_pilot_250/`](../results/06_pilot_250/) |
 | [07](../results/07_agent_quality/) 상담사 응대 품질 — 층화 변수 탐색 | 상담사가 잘 대응했는지가 mismatch를 설명하는가? 설명한다면 층화 변수로 쓸 수 있는가? | `scripts/agent_judge_prompt.py` | [`results/07_agent_quality/`](../results/07_agent_quality/) |
 | [08](../results/08_audio_seg/) 오디오 세그먼트 준비 (audio 모델용) | GPT A/B와 정확히 같은 250콜·같은 발화로 audio 모델 입력을 만들 수 있는가? | `scripts/audio_seg_extract.py` | [`results/08_audio_seg/`](../results/08_audio_seg/) |
+| [09](../results/09_audio_native_model_test/) audio-native 모델 테스트 (Qwen-Omni) | 텍스트 전사를 거치지 않고 오디오를 직접 먹는 모델은, 08에서 만든 같은 250콜에서 GPT 텍스트 파이프라인만큼 할 수 있는가? | `scripts/../results/09_audio_native_model_test/qwen2_5_omni_test.ipynb` | [`results/09_audio_native_model_test/`](../results/09_audio_native_model_test/) |
 
 ---
 

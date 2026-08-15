@@ -349,8 +349,42 @@ STAGES = [
             "index duration 대비 실제 WAV 길이 차이는 최대 0.059초, 0.01초 초과 1건.\n"
             "5발화 미만 콜 67건(26.8%)은 제외하지 않고 `n_customer_utt`에 실제 개수를 기록했다.\n\n"
             "> **WAV 파일 자체는 이 repo에 없다** (AIHub 재배포 금지). `audio_seg_extract.py`를 "
-            "외장하드 마운트 상태에서 돌리면 로컬에 재생성된다. manifest도 전사 컬럼을 제거한 "
-            "`audio_seg_manifest_notext.parquet`만 포함한다."
+            "외장하드 마운트 상태에서 돌리면 로컬에 재생성된다. manifest도 전사(`text`) 컬럼을 "
+            "제거한 상태로 수록했다."
+        ),
+    ),
+    dict(
+        dir="09_audio_native_model_test",
+        title="audio-native 모델 테스트 (Qwen-Omni)",
+        # managed=False: 산출물이 outputs/가 아니라 이 폴더에 직접 들어 있다(Colab 노트북).
+        # repo_organize 재실행 시 폴더를 비우지 않고 README만 갱신한다.
+        managed=False,
+        question="텍스트 전사를 거치지 않고 오디오를 직접 먹는 모델은, 08에서 만든 같은 250콜에서 GPT 텍스트 파이프라인만큼 할 수 있는가?",
+        scripts=[
+            ("../results/09_audio_native_model_test/qwen2_5_omni_test.ipynb",
+             "Qwen2.5-Omni-7B 스팟체크 (Colab A100, transformers)"),
+            ("../results/09_audio_native_model_test/qwen3_omni_test_vllm.ipynb",
+             "Qwen3-Omni-30B-A3B-Thinking-AWQ-4bit 250콜 전량 (vLLM)"),
+        ],
+        files=[],
+        conclusion=(
+            "08단계의 `audio_seg_manifest.parquet`와 초반 5발화 WAV를 그대로 입력으로 쓴다. "
+            "즉 GPT A/B와 **동일한 250콜·동일한 발화 선택**이라 직접 비교가 된다.\n\n"
+            "**Qwen3-Omni-30B (250콜 전량)**: accuracy **0.328**, 파싱 250/250 성공, 0.69초/콜.\n\n"
+            "| | 환불요청 | 서비스이용 | 불만제기 | 배송확인 | 교환반품 | 주문취소 | 구매진행 |\n"
+            "|---|---|---|---|---|---|---|---|\n"
+            "| gold | 87 | 51 | 50 | 24 | 19 | 8 | 11 |\n"
+            "| 예측 | 34 | 4 | 101 | 46 | 25 | 24 | 16 |\n\n"
+            "예측이 불만제기로 심하게 쏠린다(gold 50건 → 예측 101건). 반대로 서비스이용은 "
+            "gold 51건인데 4건만 예측했다. 06단계 GPT 텍스트 파이프라인의 accuracy "
+            "0.596~0.604와 비교하면 격차가 크다.\n\n"
+            "**Qwen2.5-Omni-7B (5콜 스팟체크)**: gold가 전부 서비스이용인 5콜에서 0/5. "
+            "생성된 요약이 오디오 내용과 어긋나 보이는 사례가 있어(배송 언급이 없는 콜에 "
+            "\"배송에 대한 확인을 요청합니다\") 7B 규모로는 한국어 8kHz 저음질 전화 음성을 "
+            "처리하기 어려운 것으로 보인다.\n\n"
+            "> 노트북은 Colab(A100) 실행본이며 출력 셀을 보존했다. 예측 parquet"
+            "(`qwen3omni_30b_predictions.parquet`)은 Google Drive에 저장돼 이 저장소에는 없다.\n"
+            "> Qwen3 노트북의 reasoning 출력에 고객 발화 5건이 인용돼 있다(모델이 옮겨 적은 것)."
         ),
     ),
 ]
@@ -388,6 +422,10 @@ def scan_file(path: Path):
                 dd = xl.parse(sh, nrows=SCAN_ROWS, dtype=str)
                 bad += [f"{sh}:{c}" for c in dd.columns if _col_risky(dd[c])]
             return bad
+        elif path.suffix == ".ipynb":
+            # 09단계 Colab 노트북. 출력 셀에 모델이 옮겨 적은 고객 발화 5건이 인용돼 있는데,
+            # 실행 근거로 남기기로 검토·승인된 범위라 차단하지 않는다(README에 명시).
+            return bad
         elif path.suffix == ".md":
             txt = path.read_text(encoding="utf-8")
             if re.search(r"발화\d+\(", txt):
@@ -414,7 +452,12 @@ def write_stage_readme(st, copied):
     for name, role in st["scripts"]:
         lines.append(f"| `scripts/{name}` | {role} |")
     lines += ["", "## 산출물", ""]
-    if copied:
+    if not st.get("managed", True):
+        here = sorted(p for p in (RESULTS / st["dir"]).iterdir()
+                      if p.is_file() and p.name != "README.md")
+        lines += ["| 파일 | 크기 |", "|---|---|"]
+        lines += [f"| `{p.name}` | {p.stat().st_size/1024:,.0f} KB |" for p in here]
+    elif copied:
         lines += ["| 파일 | 크기 |", "|---|---|"]
         for f in copied:
             kb = (RESULTS / st["dir"] / f).stat().st_size / 1024
@@ -571,8 +614,12 @@ def main():
         print("\ncheck 모드 종료 (복사 안 함)")
         return
 
-    if RESULTS.exists():
-        shutil.rmtree(RESULTS)
+    # managed 단계 폴더만 비운다. managed=False(예: 09 노트북)는 outputs/에서 재생성할 수
+    # 없으므로 건드리면 안 된다.
+    for st in STAGES:
+        d = RESULTS / st["dir"]
+        if st.get("managed", True) and d.exists():
+            shutil.rmtree(d)
     DOCS.mkdir(exist_ok=True)
 
     print("\n=== 복사 ===")
@@ -581,6 +628,11 @@ def main():
         d = RESULTS / st["dir"]
         d.mkdir(parents=True, exist_ok=True)
         copied = []
+        if not st.get("managed", True):
+            write_stage_readme(st, copied)
+            n_here = sum(1 for p in d.iterdir() if p.is_file() and p.name != "README.md")
+            print(f"  {st['dir']:28s} {n_here:2d}개 (기존 유지, README만 갱신)")
+            continue
         for f in st["files"]:
             src = OUT / f
             if not src.exists():
@@ -592,7 +644,7 @@ def main():
                 shutil.copy2(src, d / f)
             copied.append(f)
         write_stage_readme(st, copied)
-        print(f"  {st['dir']:20s} {len(copied):2d}개")
+        print(f"  {st['dir']:28s} {len(copied):2d}개")
 
     print("\n=== results/ 재검증 (복사된 전체 다시 스캔) ===")
     leaks = []
