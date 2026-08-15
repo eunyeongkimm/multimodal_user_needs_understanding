@@ -56,7 +56,9 @@ AIHub D04는 **재배포 금지** 라이선스다. 따라서 이 저장소에는
 
 원문이 필요하면 [AIHub](https://aihub.or.kr)에서 직접 내려받은 뒤 `scripts/build_index.py`부터 재현하면 된다. 외부 경로는 `docs/PROJECT_STATE.md`의 "외부 데이터 경로" 참고.
 
-저장소에 없는 파일이라도 **무엇이 있는지는** [`docs/DATA_INVENTORY.md`](docs/DATA_INVENTORY.md)에서 확인할 수 있다 — `outputs/` 전체 2,336개 항목의 파일명·크기·행×열·컬럼·제외 사유가 들어 있다.
+저장소에 없는 파일이라도 **무엇이 있는지는** [`docs/DATA_INVENTORY.md`](docs/DATA_INVENTORY.md)에서 확인할 수 있다 — `outputs/` 전체 항목의 파일명·크기·행×열·컬럼·제외 사유가 들어 있다.
+
+Colab과 로컬을 오가며 작업하는 규약은 [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
 
 ---
 
