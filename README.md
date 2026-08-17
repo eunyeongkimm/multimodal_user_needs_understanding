@@ -32,6 +32,7 @@ outputs/             로컬 작업 캐시 2.5GB (git 제외)
 | [07_agent_quality](results/07_agent_quality/) | 상담사 응대 품질 층화 |
 | [08_audio_seg](results/08_audio_seg/) | 오디오 세그먼트 준비 |
 | [09_audio_native_model_test](results/09_audio_native_model_test/) | audio-native 모델 테스트 (Qwen-Omni, Colab 노트북) |
+| [10_fine_tuning](results/10_fine_tuning/) | fine-tuning 파이프라인 타당성 확인 (Colab 노트북) |
 
 ### `scripts/`가 평면인 이유
 
@@ -49,10 +50,15 @@ AIHub D04는 **재배포 금지** 라이선스다. 따라서 이 저장소에는
 
 저장소에는 **예측·라벨·지표·요약만** 들어 있다. 큐레이션은 화이트리스트 방식이며, `scripts/repo_organize.py`가 복사 전과 후 두 번 원문 스캔(60자 초과 한글 셀 탐지)을 수행하고 하나라도 걸리면 중단한다.
 
-예외로 두 곳에 짧은 발화 인용이 남아 있다. 둘 다 방법·근거의 일부라 검토 후 유지하기로 한 범위다.
+예외로 네 곳에 짧은 발화 인용이 남아 있다. 전부 방법·근거의 일부라 검토 후 유지하기로 한 범위다.
 
 - `scripts/stage2d_prompt.py` — v3b 변형의 few-shot 예시 2발화
 - `results/09_audio_native_model_test/qwen3_omni_test_vllm.ipynb` — 모델 reasoning 출력에 인용된 5발화
+- `results/09_audio_native_model_test/qwen3_omni_test_vllm_prompt.ipynb` — 같은 성격의 reasoning 인용 30발화 내외
+- `results/10_fine_tuning/fine_tuning_v0_pipeline_test.ipynb` — 학습 데이터 포맷 확인용으로 출력된 샘플 1건에 5발화
+
+09·10단계 노트북은 Colab에서 원격에 직접 커밋되므로 `repo_organize.py`의 원문 스캔을 거치지 않는다.
+이 목록은 수동 확인 결과이며, 새 노트북을 올릴 때마다 다시 확인해야 한다.
 
 원문이 필요하면 [AIHub](https://aihub.or.kr)에서 직접 내려받은 뒤 `scripts/build_index.py`부터 재현하면 된다. 외부 경로는 `docs/PROJECT_STATE.md`의 "외부 데이터 경로" 참고.
 

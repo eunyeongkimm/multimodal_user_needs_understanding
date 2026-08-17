@@ -22,7 +22,14 @@
                               ┌─────────────┴─────────────┐
                               │                           │
                      07 상담사 품질 층화          08 오디오 세그먼트 준비
+                                                          │
+                                            09 audio-native 모델 (Qwen-Omni)
+                                              zero-shot + 프롬프트 스윕
+                                                          │
+                                            10 fine-tuning 타당성 확인
 ```
+
+09·10단계는 Colab에서 돌아가므로 스크립트가 `scripts/`가 아니라 `results/<단계>/*.ipynb`에 있다. 규약은 [`WORKFLOW.md`](WORKFLOW.md) 참고.
 
 ---
 
@@ -39,7 +46,8 @@
 | [06](../results/06_pilot_250/) 250건 paired 파일럿 — 모델 / effort / 모달리티 / 언어 | 'gold=불만제기인데 환불요청으로 예측'하는 오류를, 모델·추론량·모달리티·추론언어 중 무엇으로든 줄일 수 있는가? | `scripts/model_pilot_sample.py` | [`results/06_pilot_250/`](../results/06_pilot_250/) |
 | [07](../results/07_agent_quality/) 상담사 응대 품질 — 층화 변수 탐색 | 상담사가 잘 대응했는지가 mismatch를 설명하는가? 설명한다면 층화 변수로 쓸 수 있는가? | `scripts/agent_judge_prompt.py` | [`results/07_agent_quality/`](../results/07_agent_quality/) |
 | [08](../results/08_audio_seg/) 오디오 세그먼트 준비 (audio 모델용) | GPT A/B와 정확히 같은 250콜·같은 발화로 audio 모델 입력을 만들 수 있는가? | `scripts/audio_seg_extract.py` | [`results/08_audio_seg/`](../results/08_audio_seg/) |
-| [09](../results/09_audio_native_model_test/) audio-native 모델 테스트 (Qwen-Omni) | 텍스트 전사를 거치지 않고 오디오를 직접 먹는 모델은, 08에서 만든 같은 250콜에서 GPT 텍스트 파이프라인만큼 할 수 있는가? | `scripts/../results/09_audio_native_model_test/qwen2_5_omni_test.ipynb` | [`results/09_audio_native_model_test/`](../results/09_audio_native_model_test/) |
+| [09](../results/09_audio_native_model_test/) audio-native 모델 테스트 (Qwen-Omni) | 텍스트 전사를 거치지 않고 오디오를 직접 먹는 모델은, 08에서 만든 같은 250콜에서 GPT 텍스트 파이프라인만큼 할 수 있는가? | `results/09_audio_native_model_test/qwen2_5_omni_test.ipynb` | [`results/09_audio_native_model_test/`](../results/09_audio_native_model_test/) |
+| [10](../results/10_fine_tuning/) fine-tuning 파이프라인 타당성 확인 | 09에서 zero-shot 한계(macro-F1 0.493)를 본 Qwen3-Omni-30B를, Colab A100 40GB에서 QLoRA로 실제 학습시킬 수 있는가? | `results/10_fine_tuning/fine_tuning_v0_pipeline_test.ipynb` | [`results/10_fine_tuning/`](../results/10_fine_tuning/) |
 
 ---
 

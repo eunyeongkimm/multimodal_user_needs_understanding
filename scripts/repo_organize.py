@@ -366,6 +366,8 @@ STAGES = [
              "Qwen2.5-Omni-7B 스팟체크 (Colab A100, transformers)"),
             ("../results/09_audio_native_model_test/qwen3_omni_test_vllm.ipynb",
              "Qwen3-Omni-30B-A3B-Thinking-AWQ-4bit 250콜 전량 (vLLM)"),
+            ("../results/09_audio_native_model_test/qwen3_omni_test_vllm_prompt.ipynb",
+             "같은 250콜에서 프롬프트 변형 스윕 (think on/off, 전사 병기, 경계규칙, 2단 분류, 스코어 게이트)"),
         ],
         files=[],
         conclusion=(
@@ -383,9 +385,60 @@ STAGES = [
             "생성된 요약이 오디오 내용과 어긋나 보이는 사례가 있어(배송 언급이 없는 콜에 "
             "\"배송에 대한 확인을 요청합니다\") 7B 규모로는 한국어 8kHz 저음질 전화 음성을 "
             "처리하기 어려운 것으로 보인다.\n\n"
+            "**프롬프트 변형 스윕** (`qwen3_omni_test_vllm_prompt.ipynb`, 같은 250콜). "
+            "오디오만 주는 조건의 0.328은 프롬프트가 아니라 입력의 문제였다. "
+            "전사를 함께 주면 macro-F1이 크게 올라 GPT 텍스트 조건과 견줄 만해진다.\n\n"
+            "| 조건 | macro-F1 | 불만 F1 | 불만 recall |\n"
+            "|---|---|---|---|\n"
+            "| think-off (오디오만) | 0.450 | 0.356 | 0.260 |\n"
+            "| think-on (오디오만) | 0.461 | 0.378 | 0.298 |\n"
+            "| think-off + 전사 병기 | **0.482** | 0.444 | 0.400 |\n"
+            "| + 경계규칙 강화 | 0.421 | **0.563** | **0.760** |\n"
+            "| + 스코어 게이트 (threshold=3) | **0.490** | 0.544 | 0.620 |\n"
+            "| 최종 zero-shot | **0.493** | 0.494 | 0.420 |\n"
+            "| GPT baseline (조건 B) | **0.525** | 0.281 | 0.180 |\n\n"
+            "읽을 점 두 가지. 첫째, **불만제기는 Qwen이 GPT보다 낫다** — F1 0.494 vs 0.281, "
+            "recall 0.42 vs 0.18. GPT가 불만을 환불요청으로 흡수해 버리는 구간을 "
+            "오디오가 잡아낸다는 뜻으로, 이 연구의 가설과 방향이 맞는 유일한 지점이다. "
+            "둘째, **경계규칙을 세게 걸면 불만 recall은 0.76까지 오르지만 macro-F1은 0.421로 떨어진다** "
+            "— 불만 과예측 47건이 다른 클래스를 잠식한다. 2단 재분류(0.456/0.427/REVERT)와 "
+            "중간 강도 규칙(0.456)은 모두 이 상충을 못 풀었고, 스코어 게이트가 "
+            "그나마 절충점(0.490)이었다.\n\n"
+            "주문취소는 어느 조건에서도 F1 0.09~0.16으로 최하위다. 다만 이 250콜에 "
+            "gold 주문취소가 8건뿐이라 이 수치 자체는 근거가 약하다.\n\n"
             "> 노트북은 Colab(A100) 실행본이며 출력 셀을 보존했다. 예측 parquet"
             "(`qwen3omni_30b_predictions.parquet`)은 Google Drive에 저장돼 이 저장소에는 없다.\n"
-            "> Qwen3 노트북의 reasoning 출력에 고객 발화 5건이 인용돼 있다(모델이 옮겨 적은 것)."
+            "> 두 Qwen3 노트북의 reasoning 출력에 고객 발화가 인용돼 있다(모델이 옮겨 적은 것). "
+            "검토 후 유지하기로 한 범위다."
+        ),
+    ),
+    dict(
+        dir="10_fine_tuning",
+        title="fine-tuning 파이프라인 타당성 확인",
+        # wipe=False: 09단계와 같은 이유. Colab에서 직접 커밋되는 노트북이 이 폴더에 산다.
+        wipe=False,
+        question="09에서 zero-shot 한계(macro-F1 0.493)를 본 Qwen3-Omni-30B를, Colab A100 40GB에서 QLoRA로 실제 학습시킬 수 있는가?",
+        scripts=[
+            ("../results/10_fine_tuning/fine_tuning_v0_pipeline_test.ipynb",
+             "ms-swift + 4bit QLoRA 학습 1 step 통과 여부와 peak VRAM 확인 (더미 12건, max_steps=2)"),
+        ],
+        files=[],
+        conclusion=(
+            "성능 실험이 아니라 **환경 타당성 확인**이다. 판정 기준은 노트북에 미리 적어 뒀다 — "
+            "\"40GB 내에서 안정적으로 step이 완료되면 본 학습 진행\".\n\n"
+            "설정: Qwen3-Omni-30B-A3B-Thinking, 4bit QLoRA (r=8, alpha=32), "
+            "audio encoder·aligner 고정하고 LLM만 학습, batch 1 + grad accum 4 + gradient checkpointing.\n\n"
+            "**결과: 미달.** 학습 step에 들어가기도 전에 **가중치 로딩 단계에서 CUDA OOM**이 났다 "
+            "(39.47/39.49 GiB 사용 중 20 MiB 추가 할당 실패). "
+            "`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`와 double quant를 넣어 재시도했지만 "
+            "같은 지점에서 동일하게 실패했다. 단편화가 아니라 **모델 자체가 40GB에 안 들어간다.**\n\n"
+            "다음 선택지는 셋이다 — 더 큰 GPU(A100 80GB / H100), 더 작은 백본(Qwen2.5-Omni-7B), "
+            "또는 fine-tuning 대신 09단계의 프롬프트·게이트 쪽을 더 파는 것. "
+            "09에서 7B가 5콜 스팟체크 0/5였던 걸 감안하면 두 번째는 회의적이다.\n\n"
+            "> 학습 데이터 포맷은 08단계 `audio_seg_manifest.parquet` + gold를 엮어 "
+            "발화 5건 단위 messages JSONL로 만든다(노트북 cell 10). "
+            "이때 쓴 카테고리 정의는 `stage2d_prompt.py`의 `CATEGORY_DEFINITIONS`가 아니라 "
+            "한 줄로 축약한 별도 문자열이다 — 03단계와 직접 비교할 때 주의."
         ),
     ),
 ]
@@ -457,7 +510,9 @@ def write_stage_readme(st):
     lines = [f"# {st['dir'][:2]}. {st['title']}", "", f"**질문**: {st['question']}", "",
              "## 스크립트", "", "| 스크립트 | 역할 |", "|---|---|"]
     for name, role in st["scripts"]:
-        path = name if name.startswith("..") else f"scripts/{name}"
+        # 저장소 루트 기준 경로로 통일한다. 09단계 이후는 Colab 노트북이라
+        # scripts/가 아니라 results/ 아래에 살고, STAGES에는 "../results/..."로 적힌다.
+        path = name[3:] if name.startswith("../") else f"scripts/{name}"
         lines.append(f"| `{path}` | {role} |")
     lines += ["", "## 산출물", ""]
     here = sorted(p for p in d.iterdir() if p.is_file() and p.name != "README.md")
@@ -529,7 +584,14 @@ def write_pipeline_doc():
         "                              ┌─────────────┴─────────────┐",
         "                              │                           │",
         "                     07 상담사 품질 층화          08 오디오 세그먼트 준비",
+        "                                                          │",
+        "                                            09 audio-native 모델 (Qwen-Omni)",
+        "                                              zero-shot + 프롬프트 스윕",
+        "                                                          │",
+        "                                            10 fine-tuning 타당성 확인",
         "```", "",
+        "09·10단계는 Colab에서 돌아가므로 스크립트가 `scripts/`가 아니라 "
+        "`results/<단계>/*.ipynb`에 있다. 규약은 [`WORKFLOW.md`](WORKFLOW.md) 참고.", "",
         "---", "", "## 단계별 지도", "",
         "| 단계 | 무엇을 물었나 | 시작점 스크립트 | 결과 |",
         "|---|---|---|---|",
@@ -537,8 +599,10 @@ def write_pipeline_doc():
     for st in STAGES:
         num = st["dir"][:2]
         entry = st["scripts"][0][0].split(" / ")[0]
+        # 09단계 이후는 Colab 노트북이라 scripts/가 아니라 results/ 아래에 산다.
+        entry = entry[3:] if entry.startswith("../") else f"scripts/{entry}"
         L.append(f"| [{num}]({'../results/' + st['dir']}/) {st['title']} | {st['question']} "
-                 f"| `scripts/{entry}` | [`results/{st['dir']}/`](../results/{st['dir']}/) |")
+                 f"| `{entry}` | [`results/{st['dir']}/`](../results/{st['dir']}/) |")
     L += ["", "---", "", "## 스크립트 → 단계 역인덱스", "",
           "`scripts/` 전체를 단계별로 묶은 것. 파일을 열기 전에 여기서 소속 단계를 찾고, "
           "그 단계의 `results/<단계>/README.md`를 먼저 읽으면 맥락이 잡힌다.", ""]

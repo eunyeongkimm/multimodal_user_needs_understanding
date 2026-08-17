@@ -6,8 +6,9 @@
 
 | 스크립트 | 역할 |
 |---|---|
-| `../results/09_audio_native_model_test/qwen2_5_omni_test.ipynb` | Qwen2.5-Omni-7B 스팟체크 (Colab A100, transformers) |
-| `../results/09_audio_native_model_test/qwen3_omni_test_vllm.ipynb` | Qwen3-Omni-30B-A3B-Thinking-AWQ-4bit 250콜 전량 (vLLM) |
+| `results/09_audio_native_model_test/qwen2_5_omni_test.ipynb` | Qwen2.5-Omni-7B 스팟체크 (Colab A100, transformers) |
+| `results/09_audio_native_model_test/qwen3_omni_test_vllm.ipynb` | Qwen3-Omni-30B-A3B-Thinking-AWQ-4bit 250콜 전량 (vLLM) |
+| `results/09_audio_native_model_test/qwen3_omni_test_vllm_prompt.ipynb` | 같은 250콜에서 프롬프트 변형 스윕 (think on/off, 전사 병기, 경계규칙, 2단 분류, 스코어 게이트) |
 
 ## 산출물
 
@@ -15,6 +16,7 @@
 |---|---|
 | `qwen2_5_omni_test.ipynb` | 70 KB |
 | `qwen3_omni_test_vllm.ipynb` | 52 KB |
+| `qwen3_omni_test_vllm_prompt.ipynb` | 341 KB |
 
 ## 결론
 
@@ -31,5 +33,21 @@
 
 **Qwen2.5-Omni-7B (5콜 스팟체크)**: gold가 전부 서비스이용인 5콜에서 0/5. 생성된 요약이 오디오 내용과 어긋나 보이는 사례가 있어(배송 언급이 없는 콜에 "배송에 대한 확인을 요청합니다") 7B 규모로는 한국어 8kHz 저음질 전화 음성을 처리하기 어려운 것으로 보인다.
 
+**프롬프트 변형 스윕** (`qwen3_omni_test_vllm_prompt.ipynb`, 같은 250콜). 오디오만 주는 조건의 0.328은 프롬프트가 아니라 입력의 문제였다. 전사를 함께 주면 macro-F1이 크게 올라 GPT 텍스트 조건과 견줄 만해진다.
+
+| 조건 | macro-F1 | 불만 F1 | 불만 recall |
+|---|---|---|---|
+| think-off (오디오만) | 0.450 | 0.356 | 0.260 |
+| think-on (오디오만) | 0.461 | 0.378 | 0.298 |
+| think-off + 전사 병기 | **0.482** | 0.444 | 0.400 |
+| + 경계규칙 강화 | 0.421 | **0.563** | **0.760** |
+| + 스코어 게이트 (threshold=3) | **0.490** | 0.544 | 0.620 |
+| 최종 zero-shot | **0.493** | 0.494 | 0.420 |
+| GPT baseline (조건 B) | **0.525** | 0.281 | 0.180 |
+
+읽을 점 두 가지. 첫째, **불만제기는 Qwen이 GPT보다 낫다** — F1 0.494 vs 0.281, recall 0.42 vs 0.18. GPT가 불만을 환불요청으로 흡수해 버리는 구간을 오디오가 잡아낸다는 뜻으로, 이 연구의 가설과 방향이 맞는 유일한 지점이다. 둘째, **경계규칙을 세게 걸면 불만 recall은 0.76까지 오르지만 macro-F1은 0.421로 떨어진다** — 불만 과예측 47건이 다른 클래스를 잠식한다. 2단 재분류(0.456/0.427/REVERT)와 중간 강도 규칙(0.456)은 모두 이 상충을 못 풀었고, 스코어 게이트가 그나마 절충점(0.490)이었다.
+
+주문취소는 어느 조건에서도 F1 0.09~0.16으로 최하위다. 다만 이 250콜에 gold 주문취소가 8건뿐이라 이 수치 자체는 근거가 약하다.
+
 > 노트북은 Colab(A100) 실행본이며 출력 셀을 보존했다. 예측 parquet(`qwen3omni_30b_predictions.parquet`)은 Google Drive에 저장돼 이 저장소에는 없다.
-> Qwen3 노트북의 reasoning 출력에 고객 발화 5건이 인용돼 있다(모델이 옮겨 적은 것).
+> 두 Qwen3 노트북의 reasoning 출력에 고객 발화가 인용돼 있다(모델이 옮겨 적은 것). 검토 후 유지하기로 한 범위다.

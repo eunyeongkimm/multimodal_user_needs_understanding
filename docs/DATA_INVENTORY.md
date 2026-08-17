@@ -2,7 +2,7 @@
 
 `outputs/`는 git에 올리지 않는다(2.5GB + AIHub 재배포 금지). 하지만 **무엇이 있는지**는 저장소만 봐도 알 수 있어야 하므로, 목록·크기·행수·컬럼을 여기 남긴다.
 
-- 전체 2,334개 항목 / 약 2.6 GB
+- 전체 2,335개 항목 / 약 2.6 GB
 - 저장소 수록 103개 (`results/`)
 - batch 요청 JSONL 2,102개는 표에서 접어 둠(아래 요약만)
 
@@ -55,6 +55,7 @@
 | `gold_actual_batch1_final.parquet` | 0.1 | 19,847 × 5 | **수록** |  |
 | `gold_actual_batch1_v4.parquet` | 0.1 | 11,579 × 5 | **수록** |  |
 | `gold_actual_batch1_v5.parquet` | 0.1 | 11,127 × 4 | **수록** |  |
+| `gold_category_review.md` | 0.0 |  | 제외 | 전사 원문 포함 또는 중간 산출물 |
 | `human_eval_final.csv` | 0.2 | 80 × 8 | 제외 | 전사 원문 포함 또는 중간 산출물 |
 | `human_eval_final.xlsx` | 0.1 |  | 제외 | 전사 원문 포함 또는 중간 산출물 |
 | `human_eval_final_fin.csv` | 0.2 | 80 × 8 | 제외 | 전사 원문 포함 또는 중간 산출물 |

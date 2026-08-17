@@ -26,10 +26,12 @@ git pull --rebase
 Colab에서 저장할 때는 **경로를 반드시 지정한다.** 저장 대화상자의 파일 경로란을 비워 두면 저장소 루트에 떨어진다.
 
 ```
-results/09_audio_native_model_test/<노트북이름>.ipynb
+results/<단계폴더>/<노트북이름>.ipynb
 ```
 
-> ⚠️ macOS는 대소문자를 구분하지 않는다. `readme.md`를 만들면 `README.md`와 충돌해 로컬에서 덮어써진다. 실제로 한 번 발생했다. 파일명은 기존 것과 대소문자까지 맞춘다.
+> ⚠️ macOS는 대소문자를 구분하지 않는다. `readme.md`를 만들면 `README.md`와 충돌해 로컬에서 덮어써진다. 실제로 두 번 발생했다(루트, `10_fine_tuning/`). **폴더 README는 손으로 만들지 않는다** — `repo_organize.py`가 `README.md`로 생성한다.
+
+> ⚠️ Colab의 "GitHub에 사본 저장"은 원격에 직접 커밋하므로 **`repo_organize.py`의 원문 스캔을 건너뛴다.** 노트북 출력 셀에 고객 발화가 인용돼 있어도 아무도 막지 않는다. 공개 저장소이고 AIHub는 재배포 금지이므로, 새 노트북을 올린 뒤에는 pull해서 출력 셀을 직접 확인하고 README의 인용 목록을 갱신한다.
 
 ---
 
