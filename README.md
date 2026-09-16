@@ -34,6 +34,7 @@ outputs/             로컬 작업 캐시 2.5GB (git 제외)
 | [09_audio_native_model_test](results/09_audio_native_model_test/) | audio-native 모델 테스트 (Qwen-Omni, Colab 노트북) |
 | [10_fine_tuning](results/10_fine_tuning/) | fine-tuning 파이프라인 타당성 확인 (Colab 노트북) |
 | [11_arousal_screen](results/11_arousal_screen/) | 각성도 타깃 전환 사전 스크리닝 (라벨링 전 타당성 판정) |
+| [12_layer_probe](results/12_layer_probe/) | Qwen2.5-Omni 층별 표현 probe (Koduru 재현, Colab 노트북) |
 
 ### `scripts/`가 평면인 이유
 
