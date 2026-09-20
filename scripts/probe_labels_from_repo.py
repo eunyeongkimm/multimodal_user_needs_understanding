@@ -29,7 +29,8 @@ gold_actual 은 `results/01_gold_labeling/gold_actual_batch1_final.parquet`
 --------------------------------------------------------------------------
 출력
 --------------------------------------------------------------------------
-  outputs/probe_set_pilot250/probe_labels.parquet
+  outputs/probe_set_pilot250/probe_labels.parquet      (로컬 작업본, gitignore)
+  results/12_layer_probe/probe_labels.parquet          (저장소 수록본)
       call_id, gender, n_utt, gold_actual, is_complaint
       (probe_audio_prep.py 산출물과 동일 스키마)
 
@@ -49,6 +50,9 @@ SAMPLE_PATH = BASE_DIR / "results" / "06_pilot_250" / "model_pilot_sample.csv"
 GOLD_PATH = BASE_DIR / "results" / "01_gold_labeling" / "gold_actual_batch1_final.parquet"
 MANIFEST_PATH = BASE_DIR / "results" / "08_audio_seg" / "audio_seg_manifest.parquet"
 OUT_PATH = BASE_DIR / "outputs" / "probe_set_pilot250" / "probe_labels.parquet"
+# 저장소 수록 사본. outputs/ 는 gitignore 대상이라 git pull 로는 안 오므로,
+# 노트북에 올릴 파일은 results/ 쪽 사본을 쓰면 된다(관례: results/ = 큐레이션 사본).
+REPO_COPY_PATH = BASE_DIR / "results" / "12_layer_probe" / "probe_labels.parquet"
 
 COMPLAINT = "불만제기"
 
@@ -84,8 +88,11 @@ def main():
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     lab.to_parquet(OUT_PATH, index=False)
+    REPO_COPY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lab.to_parquet(REPO_COPY_PATH, index=False)
 
     print(f"저장: {OUT_PATH}")
+    print(f"저장: {REPO_COPY_PATH}  (저장소 수록본 - git pull 로 받는 쪽)")
     print(f"  {len(lab)}콜 / 컬럼 {list(lab.columns)}")
     print(f"  성별: {lab['gender'].value_counts().to_dict()}")
     print(f"  불만제기: {int(lab['is_complaint'].sum())}건 "

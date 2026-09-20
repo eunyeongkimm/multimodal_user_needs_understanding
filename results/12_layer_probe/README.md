@@ -8,7 +8,7 @@ Koduru et al. *"Heard but Not Heeded"* 는 준언어 정보가 오디오 인코�
 
 | 스크립트 | 역할 | 실행 위치 |
 |---|---|---|
-| `scripts/probe_labels_from_repo.py` | **250콜 성별 라벨을 저장소 수록본만으로 생성** (`outputs/` 불필요) | 어디서나 |
+| `scripts/probe_labels_from_repo.py` | 250콜 성별 라벨 생성 (`outputs/` 불필요). **산출물이 이미 아래에 수록돼 있어 보통은 실행할 필요 없다** | 어디서나 |
 | `scripts/probe_audio_prep.py` | 임의 call_id 세트의 오디오 + 라벨 준비. `--labels-only`는 라벨만 만들며 외장하드 불필요 | 맥 (`outputs/` 필요) |
 | `scripts/build_layer_probe_notebook.py` | 아래 노트북 생성기 (본문을 diff 가능한 형태로 관리) | 어디서나 |
 | `results/12_layer_probe/qwen25omni_layer_probe.ipynb` | **본 실험** | Colab Pro+ A100 |
@@ -83,12 +83,18 @@ peak와 최종출력 차이가 fold SD 안에 묻혀 판정이 안 서면 그때
 
 250콜 세트에는 성별 컬럼이 없어서 그냥 돌리면 **positive control이 통째로 꺼진다.** 7B가 이 데이터에서 이미 실패한 이력이 있어(아래 참조) 이번 실행에서 가장 중요한 진단이 이것이다. 없으면 음성 결과를 해석할 수 없다.
 
-**저장소만으로 만들 수 있다** — `outputs/` 조차 필요 없다:
+**이미 만들어서 저장소에 넣어 뒀다** — 아무것도 실행할 필요 없다:
+
+```
+results/12_layer_probe/probe_labels.parquet     (250콜, 여 160 / 남 90, 불만 50건)
+```
+
+`git pull` 하면 받아진다. 이 파일 하나를 Drive의 `MyDrive/audio_seg_2/` 에 올리면 끝이다.
+
+다시 만들고 싶으면 (`outputs/` 없이 어디서나 돌아간다):
 
 ```bash
 python scripts/probe_labels_from_repo.py
-# -> outputs/probe_set_pilot250/probe_labels.parquet (250콜, 여 160 / 남 90)
-#    이 파일 하나를 Drive의 MyDrive/audio_seg_2/ 에 올린다
 ```
 
 성별은 `results/06_pilot_250/arousal_target_percall.parquet`에서 가져온다. 그 값은 `arousal_target_check.py`가 d04에서 뽑은 것이고, 집계 정의(최빈 `speaker_gender`)와 발화 창(앞 5개 고객 발화)이 `probe_audio_prep.py`와 글자 그대로 같다. call_id 집합도 250콜 완전 일치, 결측 0. gold는 최종본에서 다시 붙이고 250/250 일치를 assert한다.
@@ -140,3 +146,9 @@ python scripts/probe_audio_prep.py --calls pilot250 --labels-only
 | `layer_probe_auc.csv` · `.parquet` | 층별 AUC 수치 테이블 |
 | `layer_probe_features.npz` | 층별 pooled 표현 (fp16) — 재분석용 |
 | `layer_probe_meta.json` | 모델·층수·pooling·CV 설정 기록 |
+
+## 저장소 수록 입력
+
+| 파일 | 내용 |
+|---|---|
+| `probe_labels.parquet` | 250콜 라벨 — `call_id`, `gender`, `n_utt`, `gold_actual`, `is_complaint`. **Drive `MyDrive/audio_seg_2/` 에 올릴 파일** |
