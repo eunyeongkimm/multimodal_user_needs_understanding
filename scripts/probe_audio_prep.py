@@ -36,9 +36,19 @@ Colab 노트북의 로더가 담당한다(모델 입력 규격이 16kHz이므로
 대조가 필요하면 --with-text 로 별도 파일(probe_text_spotcheck.parquet,
 기본 5콜)만 뽑는다.
 
+--labels-only 모드
+--------------------------------------------------------------------------
+오디오 복사를 건너뛰고 probe_labels.parquet 만 만든다. **외장하드 불필요**
+(d04_dialog_index.parquet 만 읽음). 08단계가 이미 오디오를 Drive에 올려 둔
+250콜 세트에 **성별 라벨만** 붙일 때 쓴다 - 성별이 없으면 노트북의
+positive control(모델이 우리 오디오를 표현하긴 하는가)이 통째로 꺼진다.
+
 실행:
+  # 250콜 즉시 착수용 - 성별 라벨만, 외장하드 없이
+  python scripts/probe_audio_prep.py --calls pilot250 --labels-only
+
+  # 새 세트 전체 준비 (오디오 포함, 외장하드 필요)
   python scripts/probe_audio_prep.py --calls unified2k
-  python scripts/probe_audio_prep.py --calls pilot250 --with-text
 """
 
 import argparse
@@ -102,9 +112,13 @@ def main():
     ap.add_argument("--n", type=int, default=MAX_CUSTOMER_UTT, help="콜당 앞 고객 발화 수")
     ap.add_argument("--with-text", action="store_true",
                     help="저음질 sanity check용 전사 대조 파일을 별도로 뽑는다")
+    ap.add_argument("--labels-only", action="store_true",
+                    help="오디오 복사를 건너뛰고 probe_labels.parquet만 만든다. "
+                         "외장하드 불필요(d04만 읽음). 08단계가 이미 오디오를 올려 둔 "
+                         "250콜 세트에 성별 라벨만 붙일 때 쓴다")
     args = ap.parse_args()
 
-    if not AUDIO_BASE_DIR.exists():
+    if not args.labels_only and not AUDIO_BASE_DIR.exists():
         sys.exit(f"ERROR: 외장하드 미마운트 - {AUDIO_BASE_DIR}")
     for f in (D04_PATH, GOLD_PATH):
         if not f.exists():
@@ -113,6 +127,7 @@ def main():
     name = args.calls if args.calls in CALL_SETS else Path(args.calls).stem
     out_dir = OUT_ROOT / f"probe_set_{name}"
     audio_dir = out_dir / "audio"
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     call_ids = load_call_ids(args.calls)
     d04 = pd.read_parquet(D04_PATH, columns=[
@@ -147,14 +162,20 @@ def main():
         p(f"- 유효 고객 발화가 하나도 없어 제외된 콜: **{len(missing_calls)}건**")
         p("")
 
-    p("**오디오**: AIHub 원천이 이미 발화 단위 개별 WAV라 슬라이싱 없이 그대로 복사한다. "
-      "리샘플·정규화·재인코딩이 개입하지 않는다(원음 바이트 동일). "
-      "모델 입력 규격인 16kHz 리샘플은 Colab 로더가 담당한다.")
-    p("")
+    if args.labels_only:
+        p("**`--labels-only` 모드**: 오디오 복사를 건너뛴다. 외장하드 없이 "
+          "`d04_dialog_index.parquet`만 읽어 라벨(성별 포함)을 만든다. "
+          "오디오가 이미 Drive에 올라가 있는 세트에 성별 라벨만 붙일 때 쓴다.")
+        p("")
+    else:
+        p("**오디오**: AIHub 원천이 이미 발화 단위 개별 WAV라 슬라이싱 없이 그대로 복사한다. "
+          "리샘플·정규화·재인코딩이 개입하지 않는다(원음 바이트 동일). "
+          "모델 입력 규격인 16kHz 리샘플은 Colab 로더가 담당한다.")
+        p("")
+        audio_dir.mkdir(parents=True, exist_ok=True)
 
-    audio_dir.mkdir(parents=True, exist_ok=True)
     rows, n_missing, n_broken = [], 0, 0
-    for r in seg.itertuples():
+    for r in ([] if args.labels_only else seg.itertuples()):
         src = AUDIO_BASE_DIR / r.audioPath
         dst = audio_dir / r.call_id / f"c{r.utt_idx}.wav"
         rec = {"call_id": r.call_id, "utt_idx": int(r.utt_idx),
@@ -174,7 +195,8 @@ def main():
                      "error": None if dur is not None else "WAV읽기실패"})
 
     man = pd.DataFrame(rows)
-    man.to_parquet(out_dir / "probe_manifest.parquet", index=False)
+    if not args.labels_only:
+        man.to_parquet(out_dir / "probe_manifest.parquet", index=False)
 
     # ---------- 라벨 ----------
     gold = pd.read_parquet(GOLD_PATH)
@@ -189,16 +211,17 @@ def main():
     lab["is_complaint"] = (lab["gold_actual"] == COMPLAINT).astype(int)
     lab.to_parquet(out_dir / "probe_labels.parquet", index=False)
 
-    p("## 추출 결과")
-    p("")
-    p(f"- 원본 WAV 없음: **{n_missing}건**")
-    p(f"- WAV 읽기 실패: **{n_broken}건**")
-    p(f"- 정상 추출: **{len(man) - n_missing - n_broken:,}발화**")
-    p("")
-    sr_counts = man["sample_rate"].value_counts(dropna=True).to_dict()
-    p(f"- 샘플레이트 분포: {sr_counts} (원본 유지, 리샘플 없음)")
-    p(f"- 채널 분포: {man['n_channels'].value_counts(dropna=True).to_dict()}")
-    p("")
+    if not args.labels_only:
+        p("## 추출 결과")
+        p("")
+        p(f"- 원본 WAV 없음: **{n_missing}건**")
+        p(f"- WAV 읽기 실패: **{n_broken}건**")
+        p(f"- 정상 추출: **{len(man) - n_missing - n_broken:,}발화**")
+        p("")
+        sr_counts = man["sample_rate"].value_counts(dropna=True).to_dict()
+        p(f"- 샘플레이트 분포: {sr_counts} (원본 유지, 리샘플 없음)")
+        p(f"- 채널 분포: {man['n_channels'].value_counts(dropna=True).to_dict()}")
+        p("")
     p("### 콜당 고객 발화 수")
     p("")
     p("| 발화 수 | 콜 수 |")
@@ -241,13 +264,21 @@ def main():
     p("## Colab 업로드")
     p("")
     p("```")
-    p(f"outputs/probe_set_{name}/")
-    p("  audio/                     -> Drive: MyDrive/probe_set/audio/")
-    p("  probe_manifest.parquet     -> Drive: MyDrive/probe_set/")
-    p("  probe_labels.parquet       -> Drive: MyDrive/probe_set/")
-    p("```")
-    p("")
-    p("노트북의 `PROBE_ROOT`를 그 경로로 맞추면 된다.")
+    if args.labels_only:
+        p(f"outputs/probe_set_{name}/probe_labels.parquet")
+        p("    -> Drive: MyDrive/audio_seg_2/probe_labels.parquet")
+        p("```")
+        p("")
+        p("노트북 셀 2가 `audio_seg_2/probe_labels.parquet`를 자동으로 찾아 "
+          "성별 라벨을 붙인다(없으면 positive control만 비활성화되고 나머지는 그대로 돈다).")
+    else:
+        p(f"outputs/probe_set_{name}/")
+        p("  audio/                     -> Drive: MyDrive/probe_set/audio/")
+        p("  probe_manifest.parquet     -> Drive: MyDrive/probe_set/")
+        p("  probe_labels.parquet       -> Drive: MyDrive/probe_set/")
+        p("```")
+        p("")
+        p("노트북의 `PROBE_ROOT`를 그 경로로 맞추면 된다.")
     p("")
 
     with open(out_dir / "probe_prep_summary.md", "w", encoding="utf-8") as f:

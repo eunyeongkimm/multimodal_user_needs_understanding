@@ -8,11 +8,11 @@ Koduru et al. *"Heard but Not Heeded"* 는 준언어 정보가 오디오 인코�
 
 | 스크립트 | 역할 | 실행 위치 |
 |---|---|---|
-| `scripts/probe_audio_prep.py` | 임의 call_id 세트의 오디오 + 라벨(성별 포함) 준비 | 맥 + AIHub 외장하드 |
+| `scripts/probe_audio_prep.py` | 임의 call_id 세트의 오디오 + 라벨(성별 포함) 준비. `--labels-only`는 라벨만 만들며 **외장하드 불필요** | 맥 |
 | `scripts/build_layer_probe_notebook.py` | 아래 노트북 생성기 (본문을 diff 가능한 형태로 관리) | 어디서나 |
 | `results/12_layer_probe/qwen25omni_layer_probe.ipynb` | **본 실험** | Colab Pro+ A100 |
 
-250콜 세트를 쓰면 `probe_audio_prep.py`는 건너뛴다 — 08단계가 이미 오디오를 Drive에 올려놨다.
+250콜 세트는 오디오 추출이 필요 없다(08단계가 이미 Drive에 올려놨다). 다만 성별 라벨 때문에 `--labels-only`는 한 번 돌려야 한다 — 바로 아래 참조.
 
 ## 층 인덱싱과 경계 정의 (산출물 3)
 
@@ -65,20 +65,32 @@ mel(128) ─ conv1 ─ conv2(stride2) ─ +pos
 | 높음 (>0.85) | 낮음 | 인코더는 정상. **불만이 선형으로 없는 것** — 층 비교는 유효, 결론은 음성 |
 | 낮음 (~0.5) | 낮음 | 인코더가 우리 오디오를 못 읽는 것. **층 비교 이전에 중단** |
 
-성별 라벨은 `probe_audio_prep.py` 산출물에만 들어 있다. 레거시 250콜 세트로 돌리면 이 control은 비활성화되고 전사 스팟체크만 남는다.
+성별 라벨은 `probe_audio_prep.py` 산출물에 들어 있다. 250콜 세트에는 성별 컬럼이 없으므로 `--labels-only`를 한 번 돌려 붙여야 한다(아래 참조). 안 붙이면 이 control이 비활성화되고 전사 스팟체크만 남는다.
 
-## ⚠️ 데이터 세트 — 작업 지시와 저장소가 어긋난다
+## 데이터 세트 — 250콜로 확정 (2026-09-20)
 
-지시의 **"기존 핵심실험 800콜(불만제기 250 오버샘플)"** 에 맞는 세트가 저장소에 없다.
+08단계가 이미 추출해 Drive에 올려 둔 **250콜**(`model_pilot_sample.csv`, 불만제기 50건 오버샘플)로 착수한다. **별도 800콜 세트는 준비하지 않는다.** 노트북의 `USE_LEGACY_250 = True` 그대로 두면 되고 추가 오디오 추출은 없다.
 
-| 세트 | 콜 수 | 불만제기 | 오디오 |
-|---|---|---|---|
-| `model_pilot_sample.csv` | 250 | 50 (오버샘플) | **추출 완료**, Drive 업로드됨 |
-| `v_unified_sample_call_ids.csv` | 2,000 | **250 (오버샘플)** | 미추출 |
+대가는 하나다: **n=250 / 불만 50건 / 특징 1280~3584차 → p ≫ n**.
 
-"불만제기 250 오버샘플"이라는 구성은 **2,000콜 세트와 일치**한다(800이 아니라 2,000). 800콜 세트를 따로 갖고 계시면 `PROBE_ROOT`만 그쪽으로 돌리면 된다.
+- AUC **절대값**은 낙관적이고 fold 분산이 크다 — 성능 주장으로 쓰면 안 된다.
+- AUC **상대** 비교(층 간)는 모든 층이 같은 n·p·fold를 쓰므로 공정하다. 이번 단계의 물음("어느 층이 제일 높은가")에는 충분하다.
 
-노트북은 `USE_LEGACY_250` 스위치로 둘 다 지원한다. **250콜은 지금 바로 돌아가지만** 불만 50건 / 특징 1280~3584차라 p ≫ n이고 AUC 절대값이 불안정하다. 층 간 *상대* 비교는 모든 층이 같은 n·p·fold를 쓰므로 공정하다.
+peak와 최종출력 차이가 fold SD 안에 묻혀 판정이 안 서면 그때 2,000콜(`v_unified_sample_call_ids.csv`, 불만 250 오버샘플)로 키운다: `python scripts/probe_audio_prep.py --calls unified2k`
+
+### ⚠️ 실행 전 필수 1단계 — 성별 라벨
+
+250콜 세트에는 성별 컬럼이 없어서 그냥 돌리면 **positive control이 통째로 꺼진다.** 7B가 이 데이터에서 이미 실패한 이력이 있어(아래 참조) 이번 실행에서 가장 중요한 진단이 이것이다. 없으면 음성 결과를 해석할 수 없다.
+
+외장하드 없이 1분이면 된다 (`d04_dialog_index.parquet`만 읽는다):
+
+```bash
+python scripts/probe_audio_prep.py --calls pilot250 --labels-only
+# -> outputs/probe_set_pilot250/probe_labels.parquet
+#    이 파일 하나를 Drive의 MyDrive/audio_seg_2/ 에 올린다
+```
+
+노트북 셀 2가 자동으로 찾아 붙인다. 없으면 경고만 내고 나머지는 그대로 돈다.
 
 ## ⚠️ 사전 위험 — 7B는 이 데이터에서 이미 한 번 실패했다
 
