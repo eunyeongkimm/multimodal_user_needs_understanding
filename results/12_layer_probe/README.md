@@ -8,11 +8,12 @@ Koduru et al. *"Heard but Not Heeded"* 는 준언어 정보가 오디오 인코�
 
 | 스크립트 | 역할 | 실행 위치 |
 |---|---|---|
-| `scripts/probe_audio_prep.py` | 임의 call_id 세트의 오디오 + 라벨(성별 포함) 준비. `--labels-only`는 라벨만 만들며 **외장하드 불필요** | 맥 |
+| `scripts/probe_labels_from_repo.py` | **250콜 성별 라벨을 저장소 수록본만으로 생성** (`outputs/` 불필요) | 어디서나 |
+| `scripts/probe_audio_prep.py` | 임의 call_id 세트의 오디오 + 라벨 준비. `--labels-only`는 라벨만 만들며 외장하드 불필요 | 맥 (`outputs/` 필요) |
 | `scripts/build_layer_probe_notebook.py` | 아래 노트북 생성기 (본문을 diff 가능한 형태로 관리) | 어디서나 |
 | `results/12_layer_probe/qwen25omni_layer_probe.ipynb` | **본 실험** | Colab Pro+ A100 |
 
-250콜 세트는 오디오 추출이 필요 없다(08단계가 이미 Drive에 올려놨다). 다만 성별 라벨 때문에 `--labels-only`는 한 번 돌려야 한다 — 바로 아래 참조.
+250콜 세트는 오디오 추출이 필요 없다(08단계가 이미 Drive에 올려놨다). 성별 라벨만 한 번 만들면 되는데, 이건 저장소 수록본만으로 생성된다 — 아래 참조.
 
 ## 층 인덱싱과 경계 정의 (산출물 3)
 
@@ -82,15 +83,23 @@ peak와 최종출력 차이가 fold SD 안에 묻혀 판정이 안 서면 그때
 
 250콜 세트에는 성별 컬럼이 없어서 그냥 돌리면 **positive control이 통째로 꺼진다.** 7B가 이 데이터에서 이미 실패한 이력이 있어(아래 참조) 이번 실행에서 가장 중요한 진단이 이것이다. 없으면 음성 결과를 해석할 수 없다.
 
-외장하드 없이 1분이면 된다 (`d04_dialog_index.parquet`만 읽는다):
+**저장소만으로 만들 수 있다** — `outputs/` 조차 필요 없다:
 
 ```bash
-python scripts/probe_audio_prep.py --calls pilot250 --labels-only
-# -> outputs/probe_set_pilot250/probe_labels.parquet
+python scripts/probe_labels_from_repo.py
+# -> outputs/probe_set_pilot250/probe_labels.parquet (250콜, 여 160 / 남 90)
 #    이 파일 하나를 Drive의 MyDrive/audio_seg_2/ 에 올린다
 ```
 
-노트북 셀 2가 자동으로 찾아 붙인다. 없으면 경고만 내고 나머지는 그대로 돈다.
+성별은 `results/06_pilot_250/arousal_target_percall.parquet`에서 가져온다. 그 값은 `arousal_target_check.py`가 d04에서 뽑은 것이고, 집계 정의(최빈 `speaker_gender`)와 발화 창(앞 5개 고객 발화)이 `probe_audio_prep.py`와 글자 그대로 같다. call_id 집합도 250콜 완전 일치, 결측 0. gold는 최종본에서 다시 붙이고 250/250 일치를 assert한다.
+
+`outputs/d04_dialog_index.parquet`가 있는 맥에서는 원래 경로도 쓸 수 있다(같은 파일이 나온다):
+
+```bash
+python scripts/probe_audio_prep.py --calls pilot250 --labels-only
+```
+
+노트북 셀 2가 자동으로 찾아 붙인다(`성별 라벨 결합: 250/250콜`). 없으면 경고만 내고 나머지는 그대로 돈다.
 
 ## ⚠️ 사전 위험 — 7B는 이 데이터에서 이미 한 번 실패했다
 
