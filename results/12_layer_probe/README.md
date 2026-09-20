@@ -1,0 +1,154 @@
+# 12. 층별 표현 probe — Qwen2.5-Omni-7B (Koduru 재현, 1단계)
+
+**질문**: 오디오 인코더의 어느 층 표현이 불만 vs 비불만을 가장 잘 가르는가? 그리고 그 정보는 최종 출력까지 살아남는가?
+
+Koduru et al. *"Heard but Not Heeded"* 는 준언어 정보가 오디오 인코더 상위층에 강하게 남지만 출력으로 갈수록 소실됨을 층별 linear probe로 보였다. 이 단계는 그 분석을 우리 과제(불만제기 이진 탐지)·우리 데이터(저음질 8kHz 한국어 콜센터)에 적용해, **후속 퓨전 실험("상위층 tap이 최종출력 tap보다 나은가")의 전제를 검증**한다. 최종 성능을 내는 실험이 아니다.
+
+## 스크립트
+
+| 스크립트 | 역할 | 실행 위치 |
+|---|---|---|
+| `scripts/probe_labels_from_repo.py` | 250콜 성별 라벨 생성 (`outputs/` 불필요). **산출물이 이미 아래에 수록돼 있어 보통은 실행할 필요 없다** | 어디서나 |
+| `scripts/probe_audio_prep.py` | 임의 call_id 세트의 오디오 + 라벨 준비. `--labels-only`는 라벨만 만들며 외장하드 불필요 | 맥 (`outputs/` 필요) |
+| `scripts/build_layer_probe_notebook.py` | 아래 노트북 생성기 (본문을 diff 가능한 형태로 관리) | 어디서나 |
+| `results/12_layer_probe/qwen25omni_layer_probe.ipynb` | **본 실험** | Colab Pro+ A100 |
+
+250콜 세트는 오디오 추출이 필요 없다(08단계가 이미 Drive에 올려놨다). 성별 라벨만 한 번 만들면 되는데, 이건 저장소 수록본만으로 생성된다 — 아래 참조.
+
+## 층 인덱싱과 경계 정의 (산출물 3)
+
+`transformers`의 `Qwen2_5OmniAudioEncoder` / `Qwen2_5OmniThinkerTextModel` 구현을 직접 읽어 확정했다. 노트북은 이 값을 **하드코딩하지 않고 런타임에 모듈에서 다시 읽는다** — 경계가 틀리면 "상위층 vs 최종출력" 비교 자체가 무의미해지기 때문이다.
+
+```
+mel(128) ─ conv1 ─ conv2(stride2) ─ +pos
+   └─ thinker.audio_tower.layers[0..31]      ← 오디오 인코더 본체, d_model=1280
+        └─ ln_post ─ audio_tower.proj         ← projector, 1280 → 3584 (LM 공간)
+             └─ thinker.model.layers[0..27]   ← 언어모델 디코더, hidden=3584
+                  └─ lm_head → 토큰
+```
+
+| 항목 | 값 | 출처 |
+|---|---|---|
+| 오디오 인코더 층 수 | 32 | `audio_config.encoder_layers` |
+| 오디오 인코더 폭 | 1280 | `audio_config.d_model` |
+| projector 출력 | 3584 | `audio_config.output_dim` |
+| 디코더 층 수 | 28 | `text_config.num_hidden_layers` |
+| 입력 샘플레이트 요건 | **16000 Hz** | `processor.feature_extractor.sampling_rate` |
+
+**정규화 깊이** = `[인코더 32층] + [projector 1] + [디코더 28층]` = 61개 tap을 한 축에 이어 붙이고 `depth = i / 60`. `depth=0` = 첫 인코더층 출력, `depth≈0.525` = projector(오디오 인코더 끝), `depth=1` = 마지막 디코더층(= lm_head 직전 = 최종 출력 표현).
+
+인코더 층만 보면 "최종출력 대비"를 답할 수 없어서 디코더 층까지 한 축에 올렸다.
+
+## 구현상 반드시 지킨 것
+
+| 항목 | 규약 | 이유 |
+|---|---|---|
+| 샘플레이트 | 8kHz → **16kHz 리샘플 필수** | 8kHz를 sr=16000이라고 넘기면 mel 필터뱅크가 2배 어긋나 피치·시간축이 통째로 뒤틀린다. 조용히 틀린 결과가 나온다 |
+| 배치 | **batch=1 고정** | 이 오디오 인코더는 varlen 어텐션이라 hidden이 `(T_packed, d)`로 평탄하게 패킹된다. 배치를 키우면 다른 콜의 프레임이 같은 텐서에 섞여 pooling이 오염된다 |
+| pooling | 인코더·projector = 콜의 모든 오디오 프레임 mean / 디코더 = **오디오 토큰 위치만** mean | 디코더에서 텍스트 프롬프트 토큰이 섞이면 층 비교가 프롬프트를 재는 꼴이 된다 |
+| 양자화 | **쓰지 않는다** (bf16) | 09단계는 4bit를 썼지만 양자화는 hidden state를 왜곡한다. `disable_talker()`만으로 A100 40GB에 들어간다 |
+| probe | 로지스틱 회귀(L2)만 | Koduru와 동일. 정보 "존재" 여부는 선형 분리로 본다 |
+| 누출 방지 | 입력 단위 = **콜** (1콜 = 1행) | 같은 콜의 발화가 train/test에 동시에 들어가는 것이 구조적으로 불가능 |
+| 지표 | ROC-AUC, `StratifiedKFold(5)` fold별 평균 ± SD | 불만 불균형 때문에 accuracy 금지 |
+| 차원 통제 | raw + fold 내부 PCA-128 두 곡선 | 인코더 1280차 vs 디코더 3584차. 경계를 넘는 비교가 차원 차이에 오염되지 않았는지 확인 |
+
+## 저음질 sanity check (산출물 4)
+
+두 겹으로 넣었다.
+
+1. **전사 스팟체크** — 몇 개 콜을 모델에게 그대로 받아적게 해 오디오와 맞는지 본다.
+2. **positive control probe** — 같은 특징으로 **성별**을 예측한다. 성별은 오디오 인코더가 정상이면 선형으로 쉽게 갈려야 하는 준언어 속성이다(남 136Hz / 여 225Hz).
+
+전 층 AUC가 chance 근처로 나왔을 때 두 해석이 갈리는데, control 없이는 구분할 수 없다:
+
+| 성별 AUC | 불만 AUC | 해석 |
+|---|---|---|
+| 높음 (>0.85) | 낮음 | 인코더는 정상. **불만이 선형으로 없는 것** — 층 비교는 유효, 결론은 음성 |
+| 낮음 (~0.5) | 낮음 | 인코더가 우리 오디오를 못 읽는 것. **층 비교 이전에 중단** |
+
+성별 라벨은 `probe_audio_prep.py` 산출물에 들어 있다. 250콜 세트에는 성별 컬럼이 없으므로 `--labels-only`를 한 번 돌려 붙여야 한다(아래 참조). 안 붙이면 이 control이 비활성화되고 전사 스팟체크만 남는다.
+
+## 데이터 세트 — 250콜로 확정 (2026-09-20)
+
+08단계가 이미 추출해 Drive에 올려 둔 **250콜**(`model_pilot_sample.csv`, 불만제기 50건 오버샘플)로 착수한다. **별도 800콜 세트는 준비하지 않는다.** 노트북의 `USE_LEGACY_250 = True` 그대로 두면 되고 추가 오디오 추출은 없다.
+
+대가는 하나다: **n=250 / 불만 50건 / 특징 1280~3584차 → p ≫ n**.
+
+- AUC **절대값**은 낙관적이고 fold 분산이 크다 — 성능 주장으로 쓰면 안 된다.
+- AUC **상대** 비교(층 간)는 모든 층이 같은 n·p·fold를 쓰므로 공정하다. 이번 단계의 물음("어느 층이 제일 높은가")에는 충분하다.
+
+peak와 최종출력 차이가 fold SD 안에 묻혀 판정이 안 서면 그때 2,000콜(`v_unified_sample_call_ids.csv`, 불만 250 오버샘플)로 키운다: `python scripts/probe_audio_prep.py --calls unified2k`
+
+### ⚠️ 실행 전 필수 1단계 — 성별 라벨
+
+250콜 세트에는 성별 컬럼이 없어서 그냥 돌리면 **positive control이 통째로 꺼진다.** 7B가 이 데이터에서 이미 실패한 이력이 있어(아래 참조) 이번 실행에서 가장 중요한 진단이 이것이다. 없으면 음성 결과를 해석할 수 없다.
+
+**이미 만들어서 저장소에 넣어 뒀다** — 아무것도 실행할 필요 없다:
+
+```
+results/12_layer_probe/probe_labels.parquet     (250콜, 여 160 / 남 90, 불만 50건)
+```
+
+`git pull` 하면 받아진다. 이 파일 하나를 Drive의 `MyDrive/audio_seg_2/` 에 올리면 끝이다.
+
+다시 만들고 싶으면 (`outputs/` 없이 어디서나 돌아간다):
+
+```bash
+python scripts/probe_labels_from_repo.py
+```
+
+성별은 `results/06_pilot_250/arousal_target_percall.parquet`에서 가져온다. 그 값은 `arousal_target_check.py`가 d04에서 뽑은 것이고, 집계 정의(최빈 `speaker_gender`)와 발화 창(앞 5개 고객 발화)이 `probe_audio_prep.py`와 글자 그대로 같다. call_id 집합도 250콜 완전 일치, 결측 0. gold는 최종본에서 다시 붙이고 250/250 일치를 assert한다.
+
+`outputs/d04_dialog_index.parquet`가 있는 맥에서는 원래 경로도 쓸 수 있다(같은 파일이 나온다):
+
+```bash
+python scripts/probe_audio_prep.py --calls pilot250 --labels-only
+```
+
+노트북 셀 2가 자동으로 찾아 붙인다(`성별 라벨 결합: 250/250콜`). 없으면 경고만 내고 나머지는 그대로 돈다.
+
+## ⚠️ 사전 위험 — 7B는 이 데이터에서 이미 한 번 실패했다
+
+09단계 기록:
+
+| 모델 | 조건 | 결과 |
+|---|---|---|
+| Qwen2.5-Omni-**7B** | 5콜 스팟체크 | **0/5**. 오디오와 어긋나는 요약 생성 |
+| Qwen3-Omni-30B | 250콜 오디오만 | accuracy 0.328 |
+| Qwen3-Omni-30B | + 전사 병기 | macro-F1 0.482 (오디오만 0.450) |
+
+"오디오만 주면 잘 못한다"가 이미 관측돼 있다. 이건 실험을 막을 이유는 아니다 — **생성 성능이 나쁜 것과 표현에 정보가 없는 것은 다른 문제**이고, Koduru의 논지가 정확히 "상위층엔 있는데 출력으로 못 간다"이기 때문이다. 오히려 그 격차를 직접 재는 게 이 실험이다. 다만 전 층 AUC가 깔릴 가능성을 염두에 두라는 뜻이고, 그래서 positive control을 넣었다.
+
+## 판정 기준
+
+판정은 사용자가 한다. 노트북 **셀 13이 아래 기준을 실제로 계산해서** 🟢GO / 🟡부분GO / 🔴NO-GO 로 직접 출력한다(표만 놓고 눈으로 대조하지 않는다). 아래는 그 계산이 따르는 대응표다.
+
+| 관측 | 읽기 |
+|---|---|
+| 성별 control AUC ≈ 0.5 | **여기서 멈춘다.** 모델이 8kHz 한국어를 표현 못 한다 |
+| 인코더 상위층 peak ≫ 최종출력 | 소실 전 층에 정보가 더 있다 → **퓨전 실험 전제 확보** |
+| peak ≈ 최종출력, 또는 최종출력이 더 높음 | 상위층 tap 가설의 토대가 약함 → **설계 재고** |
+| peak가 인코더 **하위**층 | Koduru 패턴과 다름. 저수준 음향(채널·성량)을 재고 있을 가능성 |
+| raw와 PCA-128 곡선 모양이 다름 | 경계 비교가 차원 차이에 오염됨 → PCA 쪽을 신뢰 |
+
+## 한계
+
+- **선형** 분리만 본다. 비선형으로는 존재하는 정보를 놓칠 수 있다(Koduru도 동일).
+- 8kHz→16kHz 업샘플은 **정보를 더하지 않는다**. 원음이 4kHz에서 잘려 있다는 사실(나이퀴스트)은 그대로이고, 모델 입력 규격을 맞춘 것뿐이다.
+- pooling을 바꾸면 결과가 바뀐다. 발화 길이 가중 mean으로 고정했다.
+- n=250에서는 AUC 절대값을 성능 주장으로 쓰면 안 된다.
+
+## 산출물 (Colab 실행 후 `MyDrive/layer_probe_out/`)
+
+| 파일 | 내용 |
+|---|---|
+| `layer_probe_curve.png` | 정규화 층 깊이별 AUC 곡선 (불만 raw / 불만 PCA / 성별 control) |
+| `layer_probe_auc.csv` · `.parquet` | 층별 AUC 수치 테이블 |
+| `layer_probe_features.npz` | 층별 pooled 표현 (fp16) — 재분석용 |
+| `layer_probe_meta.json` | 모델·층수·pooling·CV 설정 기록 |
+
+## 저장소 수록 입력
+
+| 파일 | 내용 |
+|---|---|
+| `probe_labels.parquet` | 250콜 라벨 — `call_id`, `gender`, `n_utt`, `gold_actual`, `is_complaint`. **Drive `MyDrive/audio_seg_2/` 에 올릴 파일** |
