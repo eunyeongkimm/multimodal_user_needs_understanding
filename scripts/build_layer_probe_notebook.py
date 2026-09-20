@@ -3,6 +3,13 @@
 노트북 본문을 파이썬 문자열로 관리해 diff가 읽히게 하려는 목적. 노트북을
 직접 고쳤다면 이 스크립트도 같이 고쳐야 한다(또는 이 스크립트를 버려도 된다).
 
+코드 스타일은 results/09_audio_native_model_test/ 의 업로드용 노트북들
+(qwen2_5_omni_test.ipynb, qwen2_audio_feasibility_gate.ipynb 등)을 따른다:
+  - 코드 셀 첫 줄에 `# ===== 셀 N =====` 주석
+  - print("="*72) 구분선
+  - 판정은 정적 표가 아니라 실제로 계산해서 ✅/🔴/⚠️ 로 출력
+  - GPU 확인을 맨 앞 셀에서 명시적으로 하고, 부족하면 SystemExit
+
 실행: python scripts/build_layer_probe_notebook.py
 """
 
@@ -15,13 +22,24 @@ OUT = BASE_DIR / "results" / "12_layer_probe" / "qwen25omni_layer_probe.ipynb"
 CELLS = []
 
 
+def _to_source(text: str) -> list:
+    """nbformat 규약대로 각 줄에 개행을 남긴다.
+
+    주의: source 를 재생 렌더러(Jupyter/GitHub/nbviewer)는 배열을
+    ''.join() 으로 이어붙인다. 개행을 안 남기면 문단·헤더·리스트가
+    전부 한 줄로 뭉개진다 — 이번에 실제로 터진 버그가 이거였다.
+    """
+    lines = text.strip("\n").split("\n")
+    return [line + "\n" for line in lines]
+
+
 def md(text):
-    CELLS.append({"cell_type": "markdown", "metadata": {}, "source": text.strip("\n").split("\n")})
+    CELLS.append({"cell_type": "markdown", "metadata": {}, "source": _to_source(text)})
 
 
 def code(text):
     CELLS.append({"cell_type": "code", "execution_count": None, "metadata": {},
-                  "outputs": [], "source": text.strip("\n").split("\n")})
+                  "outputs": [], "source": _to_source(text)})
 
 
 # ────────────────────────────────────────────────────────────── 0
@@ -106,23 +124,49 @@ Koduru의 논지가 정확히 "상위층엔 있는데 출력으로 못 간다"�
 통째로 꺼진다**. 위 (2)에서 봤듯 7B가 이미 실패한 데이터라 이 control이
 이번 실행에서 가장 중요한 진단이다. 없으면 음성 결과를 해석할 수 없다.
 
-**외장하드 없이 1분이면 된다** (d04만 읽는다):
+`results/12_layer_probe/probe_labels.parquet` 가 저장소에 이미 수록돼 있다.
+이 파일 하나를 Drive의 `MyDrive/audio_seg_2/` 에 올리면 셀 2가 알아서
+찾아 붙인다. 없으면 경고만 내고 나머지는 그대로 돈다.
+""")
 
-```bash
-python scripts/probe_audio_prep.py --calls pilot250 --labels-only
-# -> outputs/probe_set_pilot250/probe_labels.parquet
-#    이 파일 하나를 Drive의 MyDrive/audio_seg_2/ 에 올린다
-```
+# ────────────────────────────────────────────────────────────── 0
+md("## 셀 0 — GPU 확인 (A100 기대)")
+code(r"""
+# ===== 셀 0 =====
+import subprocess
 
-셀 2가 알아서 찾아 붙인다. 없으면 경고만 내고 나머지는 그대로 돈다.
+try:
+    r = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total,memory.used",
+                        "--format=csv,noheader"], capture_output=True, text=True)
+    ok, out, err = (r.returncode == 0), r.stdout.strip(), r.stderr.strip()
+except FileNotFoundError:
+    ok, out, err = False, "", "nvidia-smi 없음 (GPU 미할당)"
+
+if not ok:
+    print("GPU가 없습니다:", err)
+    print("런타임 → 런타임 유형 변경 → 하드웨어 가속기: GPU (A100) → 저장")
+    raise SystemExit("GPU 미할당")
+
+print("GPU:", out)
+name, total, used = [x.strip() for x in out.split(",")]
+GPU_NAME, GPU_MIB = name, int(total.split()[0])
+
+# Qwen2.5-Omni-7B 는 talker·code2wav 포함 전체를 먼저 GPU에 올린 뒤
+# disable_talker() 로 정리한다(셀 3). 순간 최대 사용량이 bf16 단순 7B
+# 추정치(~16GB)보다 크므로 여유 있게 A100 40GB 기준으로 본다.
+if GPU_MIB < 35000:
+    print(f"\n⚠️ VRAM {total} — A100 40GB 미만이면 셀 3 모델 로드에서 OOM 날 수 있다.")
+    print("   런타임 유형을 A100으로 바꾸는 것을 권한다.")
+else:
+    print(f"\n{name} / {total} — 진행 가능")
 """)
 
 # ────────────────────────────────────────────────────────────── 1
 md("## 셀 1 — 환경")
 code(r"""
+# ===== 셀 1 =====
 !pip install -q -U transformers accelerate
 !pip install -q librosa soundfile scikit-learn
-!nvidia-smi --query-gpu=name,memory.total --format=csv
 """)
 
 # ────────────────────────────────────────────────────────────── 2
@@ -133,6 +177,7 @@ md(r"""
 `False` 면 `probe_audio_prep.py` 산출물(`probe_set_*/`)을 쓴다.
 """)
 code(r"""
+# ===== 셀 2 =====
 from google.colab import drive
 drive.mount('/content/drive')
 
@@ -150,8 +195,8 @@ if USE_LEGACY_250:
     labels = (gold[['call_id', gcol]].rename(columns={gcol: 'gold_actual'})
               .merge(manifest[['call_id']].drop_duplicates(), on='call_id'))
     labels['is_complaint'] = (labels['gold_actual'] == '불만제기').astype(int)
-    # 성별 라벨(positive control). probe_audio_prep.py --calls pilot250 --labels-only 로
-    # 만들어 audio_seg_2/ 에 올려두면 여기서 붙는다. 없으면 control만 꺼진다.
+    # 성별 라벨(positive control). results/12_layer_probe/probe_labels.parquet 를
+    # audio_seg_2/ 에 올려두면 여기서 붙는다. 없으면 control만 꺼진다.
     _gpath = os.path.join(META_DIR, 'probe_labels.parquet')
     if os.path.exists(_gpath):
         _g = pd.read_parquet(_gpath)[['call_id', 'gender']]
@@ -160,8 +205,8 @@ if USE_LEGACY_250:
     else:
         labels['gender'] = None
         print("!! 성별 라벨 없음 -> positive control 비활성화.\n"
-              "   맥에서 `python scripts/probe_audio_prep.py --calls pilot250 --labels-only`\n"
-              "   실행 후 probe_labels.parquet 을 MyDrive/audio_seg_2/ 에 올리면 활성화된다.")
+              "   results/12_layer_probe/probe_labels.parquet 을\n"
+              "   MyDrive/audio_seg_2/ 에 올리면 활성화된다.")
     # wav 경로: Drive에는 {call_id}/c{i}.wav 로 올라가 있다
     manifest['abs_path'] = manifest.apply(
         lambda r: os.path.join(AUDIO_ROOT, r.call_id, os.path.basename(str(r.wav_path)))
@@ -200,6 +245,7 @@ probe에는 **Thinker만** 필요하다(talker/token2wav는 음성 합성용). `
 양자화는 hidden state를 왜곡하므로 probe에는 **쓰면 안 된다**.
 """)
 code(r"""
+# ===== 셀 3 =====
 import os, torch, gc
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 gc.collect(); torch.cuda.empty_cache()
@@ -208,15 +254,25 @@ from transformers import Qwen2_5OmniForConditionalGeneration, Qwen2_5OmniProcess
 
 MODEL_ID = "Qwen/Qwen2.5-Omni-7B"
 
-processor = Qwen2_5OmniProcessor.from_pretrained(MODEL_ID)
-model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
-    MODEL_ID, dtype=torch.bfloat16, device_map="cuda",
-)
-model.disable_talker()          # probe에 불필요. 메모리 절약
-model.eval()
+def _vram():
+    f, t = torch.cuda.mem_get_info(); return f / 1024**3, t / 1024**3
+
+_f, _t = _vram(); print(f"로드 전 GPU 여유 {_f:.2f} / 전체 {_t:.2f} GiB")
+
+load_error = None
+try:
+    processor = Qwen2_5OmniProcessor.from_pretrained(MODEL_ID)
+    model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
+        MODEL_ID, dtype=torch.bfloat16, device_map="cuda",
+    )
+    model.disable_talker()          # probe에 불필요. 메모리 절약
+    model.eval()
+except Exception as e:
+    load_error = e
+    raise
 
 thinker = model.thinker
-print("loaded. GPU:", round(torch.cuda.memory_allocated()/1e9, 1), "GB")
+_f, _t = _vram(); print(f"✅ 모델 로드 완료 | GPU 여유 {_f:.2f} / 전체 {_t:.2f} GiB")
 """)
 
 # ────────────────────────────────────────────────────────────── 4
@@ -241,25 +297,34 @@ mel(128) ─ conv1 ─ conv2(stride2) ─ +pos
 `depth=1` = 마지막 디코더층 출력(= lm_head 직전 = **최종 출력 표현**).
 """)
 code(r"""
+# ===== 셀 4 =====
 acfg = thinker.config.audio_config
 tcfg = thinker.config.text_config
 
 L_ENC = len(thinker.audio_tower.layers)
 M_DEC = len(thinker.model.layers)
 
-print("=== 오디오 인코더 (audio_tower) ===")
+print("=" * 72)
+print("오디오 인코더 (audio_tower)")
+print("=" * 72)
 print(f"  encoder_layers : {L_ENC}   (config.encoder_layers={acfg.encoder_layers})")
 print(f"  d_model        : {acfg.d_model}")
 print(f"  num_mel_bins   : {acfg.num_mel_bins}")
 print(f"  n_window       : {acfg.n_window}")
 print(f"  output_dim     : {acfg.output_dim}   <- projector 출력 = LM hidden")
 print(f"  모듈           : conv1, conv2, layers[{L_ENC}], ln_post, proj")
+
 print()
-print("=== 언어모델 디코더 (thinker.model) ===")
+print("=" * 72)
+print("언어모델 디코더 (thinker.model)")
+print("=" * 72)
 print(f"  num_hidden_layers : {M_DEC}")
 print(f"  hidden_size       : {tcfg.hidden_size}")
+
 print()
-print("=== 오디오 입력 규격 ===")
+print("=" * 72)
+print("오디오 입력 규격")
+print("=" * 72)
 SR_REQUIRED = processor.feature_extractor.sampling_rate
 print(f"  feature_extractor.sampling_rate = {SR_REQUIRED}")
 print(f"  우리 원음 = 8000 Hz  ->  {'리샘플 필요' if SR_REQUIRED != 8000 else '리샘플 불필요'}")
@@ -284,7 +349,9 @@ BOUND_ENC_END = (L_ENC - 1) / (N_TAP - 1)      # 마지막 인코더층
 BOUND_PROJ    = L_ENC / (N_TAP - 1)            # projector
 
 print()
-print(f"=== 층 인덱싱 ===")
+print("=" * 72)
+print("층 인덱싱")
+print("=" * 72)
 print(f"  tap 총 {N_TAP}개 = 인코더 {L_ENC} + projector 1 + 디코더 {M_DEC}")
 print(f"  depth 0.000 = enc00 (첫 인코더층 출력)")
 print(f"  depth {BOUND_ENC_END:.3f} = enc{L_ENC-1:02d} (마지막 인코더층)")
@@ -305,6 +372,7 @@ mel 필터뱅크가 2배로 어긋나 피치·시간축이 통째로 뒤틀린�
 "저음질이라 정보가 없다"와 "모델이 못 읽는다"를 구분할 때 중요하다.
 """)
 code(r"""
+# ===== 셀 5 =====
 import librosa, soundfile as sf
 
 def load_utt(path):
@@ -341,6 +409,7 @@ md(r"""
 > 커밋 전 검토 대상이다.
 """)
 code(r"""
+# ===== 셀 6 =====
 SANITY_N = 5
 
 SYS = "당신은 한국어 음성을 정확히 받아적는 전사기입니다."
@@ -389,6 +458,7 @@ md(r"""
 projector처럼 중간 모듈 하나를 집는 데 더 직접적이다.
 """)
 code(r"""
+# ===== 셀 7 =====
 from collections import OrderedDict
 
 _POOL = {}
@@ -447,6 +517,7 @@ for n in ["enc00", f"enc{L_ENC-1:02d}", "proj", "dec00", f"dec{M_DEC-1:02d}"]:
 # ────────────────────────────────────────────────────────────── 8
 md("## 셀 8 — 전 콜 추출")
 code(r"""
+# ===== 셀 8 =====
 import time
 
 FEATS = {n: [] for n in TAP_NAMES}
@@ -500,6 +571,7 @@ md(r"""
   같이 돌려 경계 비교가 차원 때문이 아님을 확인한다.
 """)
 code(r"""
+# ===== 셀 9 =====
 from sklearn.base import clone
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -547,19 +619,24 @@ print("불만 probe 완료")
 
 # ────────────────────────────────────────────────────────────── 10
 md(r"""
-## 셀 10 — 저음질 sanity check ②: positive control  ← **산출물 4**
+## 셀 10 — 🔴 저음질 sanity check ②: positive control  ← **산출물 4**
 
 같은 특징으로 **성별**을 예측한다. 인코더가 우리 8kHz 한국어를 제대로 표현한다면
 성별은 선형으로 쉽게 갈려야 한다(F0 차이가 남 136Hz / 여 225Hz로 크다).
 
+이 셀은 **게이트다** — 여기서 실패하면 이후 층별 곡선을 해석할 근거가 없다.
+
 - 성별 AUC 높음 + 불만 AUC 낮음 → 인코더는 정상. **불만이 선형으로 없는 것**
 - 둘 다 낮음 → 인코더가 우리 오디오를 못 읽는 것. **층 비교 중단**
 
-250콜 레거시 세트에는 성별 컬럼이 없다. `probe_audio_prep.py` 산출물을 쓰면 들어 있다.
+250콜 레거시 세트에는 성별 컬럼이 없다. `probe_labels.parquet`를 올리면 들어 있다.
 없으면 이 셀은 건너뛰고, 대신 셀 6의 전사 결과로만 판단한다(근거가 약해진다).
 """)
 code(r"""
+# ===== 셀 10 : positive control 게이트 =====
 has_gender = ('gender' in y_df.columns) and y_df['gender'].notna().any()
+
+C_GENDER = None   # 게이트 판정값. 셀 13에서 사용
 
 if has_gender:
     g = y_df['gender'].astype(str)
@@ -578,13 +655,15 @@ if has_gender:
                      "target": "gender(control)", "pca": False})
     res.append(pd.DataFrame(rows))
     gmax = max(r['auc'] for r in rows)
-    print(f"성별 peak AUC = {gmax:.3f}")
-    print("→ 인코더 정상. 불만 AUC가 낮다면 '불만이 선형으로 없다'는 해석"
-          if gmax > 0.85 else
-          "→ ⚠️ 성별조차 안 갈린다. 모델이 이 오디오를 표현 못 하는 쪽을 의심할 것")
+    C_GENDER = gmax > 0.85
+
+    print(f"\n성별 peak AUC = {gmax:.3f}")
+    print("✅ 통과 — 인코더 정상. 불만 AUC가 낮다면 '불만이 선형으로 없다'는 해석"
+          if C_GENDER else
+          "🔴 실패 — 성별조차 안 갈린다. 모델이 이 오디오를 표현 못 하는 쪽을 의심할 것")
 else:
-    print("성별 라벨 없음 (레거시 250 세트). positive control 생략 — "
-          "probe_audio_prep.py 산출물을 쓰면 활성화된다.")
+    print("⚠️ 성별 라벨 없음 (레거시 250 세트). positive control 생략 — "
+          "probe_labels.parquet 을 올리면 활성화된다.")
 
 RES = pd.concat(res, ignore_index=True)
 """)
@@ -592,6 +671,7 @@ RES = pd.concat(res, ignore_index=True)
 # ────────────────────────────────────────────────────────────── 11
 md("## 셀 11 — 곡선 + 수치 테이블  ← **산출물 1·2**")
 code(r"""
+# ===== 셀 11 =====
 # Colab 기본 matplotlib에는 한글 폰트가 없어 축·제목이 전부 두부(□)로 렌더된다.
 !apt-get -qq install -y fonts-nanum > /dev/null 2>&1
 
@@ -651,7 +731,7 @@ plt.show()
 """)
 
 code(r"""
-# ── 수치 테이블 + 판정값 ──────────────────────────────────────────
+# ===== 셀 11b : 수치 테이블 + 판정값 =====
 main = RES[(RES.target == "complaint") & (~RES.pca)].sort_values("idx")
 
 peak = main.loc[main.auc.idxmax()]
@@ -672,14 +752,6 @@ print(f"최종 출력층     : {final.auc:.4f} ± {final['std']:.4f}   @ {final.
 print()
 print(f"peak - 최종출력        : {peak.auc - final.auc:+.4f}")
 print(f"인코더peak - 최종출력  : {enc_peak.auc - final.auc:+.4f}")
-print()
-print("Koduru 패턴(late encoder peak 후 하락) 재현 여부:")
-rel = (enc_peak.idx + 1) / L_ENC
-print(f"  - 인코더 peak 위치 = 인코더의 {rel*100:.0f}% 지점 "
-      f"({'상위층' if rel >= 0.6 else '중하위층'})")
-print(f"  - 인코더 peak가 최종출력보다 높은가: "
-      f"{'예' if enc_peak.auc > final.auc else '아니오'} "
-      f"({enc_peak.auc - final.auc:+.4f})")
 print("=" * 72)
 
 pd.set_option("display.width", 140)
@@ -693,6 +765,7 @@ display(show[(show.target == "complaint") & (~show.pca)]
 # ────────────────────────────────────────────────────────────── 12
 md("## 셀 12 — 저장")
 code(r"""
+# ===== 셀 12 =====
 import json, shutil
 OUTDIR = '/content/drive/MyDrive/layer_probe_out'
 os.makedirs(OUTDIR, exist_ok=True)
@@ -721,19 +794,93 @@ print("저장:", OUTDIR); print(json.dumps(meta, ensure_ascii=False, indent=2))
 
 # ────────────────────────────────────────────────────────────── 13
 md(r"""
-## 읽는 법 — 판정 기준
+## 셀 13 — 최종 판정
 
-판정은 사용자가 한다. 아래는 대응표일 뿐이다.
+셀 10(positive control), 셀 11(peak/최종출력)의 실측값으로 **직접 계산**한다.
+정적 표를 눈으로 대조하지 않고, 아래 셀이 판정을 내린다. 다만 최종 결론은
+사용자가 내리는 것이고 이건 근거 요약이다.
+""")
+code(r"""
+# ===== 셀 13 : 최종 판정 (자립형) =====
+# 앞 셀을 건너뛰어도 동작하도록 필요한 값을 globals()에서 직접 찾고,
+# 없으면 "미실행"으로 표시한다.
+def _g(name, default=None):
+    return globals().get(name, default)
 
-| 관측 | 읽기 |
-|---|---|
-| 성별 control AUC ≈ 0.5 | **여기서 멈춘다.** 모델이 8kHz 한국어를 표현 못 한다. 층 비교 무의미 |
-| 인코더 상위층 peak ≫ 최종출력 | 소실 전 층에 정보가 더 있다 → **퓨전 실험 전제 확보** |
-| peak ≈ 최종출력, 또는 최종출력이 더 높음 | 상위층 tap 가설의 토대가 약함 → **설계 재고** |
-| peak가 인코더 **하위**층 | Koduru 패턴과 다름. 저수준 음향(채널·성량)을 재고 있을 가능성 |
-| raw와 PCA-128 곡선의 모양이 다름 | 경계를 넘는 비교가 차원 차이(1280 vs 3584)에 오염됐다는 뜻 → PCA 쪽을 신뢰 |
+def _mark(v):
+    return "✅ 통과" if v is True else ("🔴 실패" if v is False else "⚠️ 미실행")
 
-### 이 결과를 과신하면 안 되는 지점
+print("=" * 72)
+print("Qwen2.5-Omni-7B 층별 probe — 최종 판정")
+print("=" * 72)
+
+C1 = _g("C_GENDER")   # 셀 10: positive control
+print(f"\n게이트 (셀 10 positive control)  {_mark(C1)}")
+if "y_gender" in globals():
+    _gmax = RES[RES.target == "gender(control)"].auc.max()
+    print(f"   성별 peak AUC = {_gmax:.3f}  (기준 > 0.85)")
+
+if C1 is False:
+    print("\n" + "=" * 72)
+    print("🔴 여기서 중단 — 모델이 8kHz 한국어를 표현하지 못한다.")
+    print("   층 비교는 계속할 수 있지만 해석 근거가 없다.")
+    print("=" * 72)
+elif C1 is None:
+    print("\n⚠️ positive control 미실행 — 판정 근거가 전사 스팟체크(셀 6)뿐이라 약하다.")
+
+if "RES" in globals():
+    main = RES[(RES.target == "complaint") & (~RES.pca)].sort_values("idx")
+    peak = main.loc[main.auc.idxmax()]
+    final = main.iloc[-1]
+    enc = main[main.stage == "encoder"]
+    enc_peak = enc.loc[enc.auc.idxmax()]
+    gap = enc_peak.auc - final.auc
+
+    rel = (enc_peak.idx + 1) / L_ENC
+    # bool() 캐스팅 필수: pandas/numpy 비교 결과는 numpy.bool_ 이라
+    # `is True`/`is False` identity 비교가 항상 False로 실패한다.
+    C2 = bool(gap > enc_peak["std"])        # peak가 최종출력보다 fold SD 이상 높은가
+    C3 = bool(rel >= 0.6)                   # peak가 인코더 상위 40% 안에 있는가
+
+    print(f"\n인코더 내 peak    {enc_peak.auc:.4f} ± {enc_peak['std']:.4f}  "
+          f"@ 인코더 {int(enc_peak.idx)+1}/{L_ENC}층 (상위 {(1-rel)*100:.0f}%)")
+    print(f"최종 출력층       {final.auc:.4f} ± {final['std']:.4f}")
+    print(f"peak - 최종출력   {gap:+.4f}")
+    print()
+    print(f"기준 1 peak가 최종출력보다 fold SD 이상 높은가   {_mark(C2)}")
+    print(f"기준 2 peak가 인코더 상위 40% 안에 있는가        {_mark(C3)}")
+
+    print()
+    print("=" * 72)
+    if C1 is False:
+        print("🔴 판정 보류 — 게이트 실패로 위 수치를 해석할 근거가 없다.")
+        print("   (셀 10에서 이미 중단을 권고했다. 아래는 참고용 원시 수치일 뿐이다)")
+    elif C2 and C3:
+        print("🟢 GO — 소실 전 층에 정보가 더 있다. 퓨전 실험 전제 확보")
+    elif C2 and not C3:
+        print("🟡 부분 GO — peak가 최종출력보다 높지만 인코더 하위층이다.")
+        print("   Koduru 패턴(late encoder peak)과 다르다 — 저수준 음향을")
+        print("   재고 있을 가능성. 퓨전 전에 원인 확인 필요.")
+    else:
+        print("🔴 NO-GO — peak와 최종출력 차이가 fold 분산 안에 묻힌다.")
+        print("   상위층 tap 가설의 토대가 약하다. 설계 재고 필요.")
+    print("=" * 72)
+
+    raw = main
+    pca = RES[(RES.target == "complaint") & (RES.pca)].sort_values("idx")
+    if not pca.empty:
+        shape_diff = np.abs(raw.auc.values - pca.auc.values).mean()
+        print(f"\nraw vs PCA-{N_PCA} 평균 절대 차이: {shape_diff:.4f}  "
+              f"({'차원 통제 후에도 패턴 유지' if shape_diff < 0.05 else '⚠️ 차원 차이가 결과에 영향 — PCA 쪽을 신뢰할 것'})")
+else:
+    print("\n⚠️ RES 없음 — 셀 9(probe)를 먼저 돌려야 한다.")
+""")
+
+# ────────────────────────────────────────────────────────────── 14
+md(r"""
+## 읽는 법 — 과신하면 안 되는 지점
+
+셀 13이 판정을 계산해 주지만, 그 숫자 자체의 한계는 사람이 알아야 한다.
 
 - **n=250이면 p ≫ n이다.** 불만 50건 / 특징 1280~3584차. AUC 절대값은 낙관적이고
   fold 분산이 크다. 층 간 *상대* 비교는 모든 층이 같은 n·p·fold를 쓰므로 공정하지만,
